@@ -1,0 +1,8 @@
+version: '3'
+
+services:
+  blazorapp:
+    restart: unless-stopped
+    build: .
+    ports:
+      - "8042:80"
