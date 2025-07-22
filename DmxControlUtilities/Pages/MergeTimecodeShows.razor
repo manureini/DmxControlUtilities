@@ -1,0 +1,144 @@
+﻿@page "/mergetimecodeshows"
+@using DmxControlUtilities.Models
+@using DmxControlUtilities.Services
+@using MComponents
+@using MComponents.Files
+@using MComponents.MLoading
+@using MComponents.MSelect
+@using MComponents.MToaster
+@using MComponents.MWizard
+
+@inject DmzFileService DmzFileService
+@inject TimeshowService TimeshowService
+@inject IJSRuntime JsRuntime
+@inject IToaster Toaster
+
+<PageTitle>Merge TimecodeShows</PageTitle>
+
+<CascadingValue Value="mEditContext">
+
+    @if (mIsLoading)
+    {
+        <MSpinner />
+    }
+    else
+    {
+        <MWizard OnStepChanged="OnStepChanged" OnSubmit="OnSubmitWizard">
+            <Steps>
+                <MWizardStep Identifier="UploadSource" Title="Upload Source">
+                    <Content>
+                        <MInputFile @bind-Value=mSourceFile />
+                    </Content>
+                </MWizardStep>
+
+                <MWizardStep Identifier="SelectTimeshow" Title="Choose Timeshow">
+                    <Content>
+                        <MSelect Options="mTimeshows" Property="@nameof(TimeshowMeta.Name)" @bind-Value="mSelectedTimeshow" />
+                    </Content>
+                </MWizardStep>
+
+                <MWizardStep Identifier="UploadDest" Title="Upload Destination">
+                    <Content>
+                        <MInputFile @bind-Value=mDestFile />
+                    </Content>
+                </MWizardStep>
+            </Steps>
+        </MWizard>
+    }
+
+</CascadingValue>
+
+@code {
+
+    protected EditContext mEditContext;
+    protected IFile mSourceFile;
+    protected IFile mDestFile;
+
+    protected List<TimeshowMeta> mTimeshows = new List<TimeshowMeta>();
+    protected TimeshowMeta? mSelectedTimeshow;
+    protected DmzContainer? mSourceContainer;
+
+    protected bool mIsLoading = false;
+
+    protected override Task OnInitializedAsync()
+    {
+        mEditContext = new EditContext(this);
+        return base.OnInitializedAsync();
+    }
+
+    protected async Task OnStepChanged(StepChangedArgs pArgs)
+    {
+        StateHasChanged();
+        pArgs.DelayStepTransition = true;
+
+        if (pArgs.OldStep.Identifier == "UploadSource" && pArgs.NewStepIndex > pArgs.OldStepIndex)
+        {
+            if (mSourceFile == null)
+            {
+                pArgs.Cancelled = true;
+                return;
+            }
+
+            var file = (UploadedFile)mSourceFile;
+            mSourceContainer = DmzFileService.ReadDmzFile(file.Stream, file.FileName);
+            mTimeshows = TimeshowService.GetTimeshows(mSourceContainer);
+        }
+
+        if (pArgs.OldStep.Identifier == "SelectTimeshow" && pArgs.NewStepIndex > pArgs.OldStepIndex)
+        {
+            if (mSelectedTimeshow == null)
+            {
+                pArgs.Cancelled = true;
+                return;
+            }
+        }
+    }
+
+    protected void Clear()
+    {
+        mSourceFile = null;
+        mDestFile = null;
+        mSelectedTimeshow = null;
+        mSourceContainer = null;
+        mTimeshows.Clear();
+    }
+
+    protected async Task OnSubmitWizard()
+    {
+        if (mDestFile == null || mSelectedTimeshow == null)
+        {
+            return;
+        }
+
+        try
+        {
+            mIsLoading = true;
+            StateHasChanged();
+            await Task.Delay(100);
+
+            var destFile = (UploadedFile)mDestFile;
+
+            var containerDest = DmzFileService.ReadDmzFile(destFile.Stream, destFile.FileName);
+
+            var ts = TimeshowService.ExtractTimeshow(mSourceContainer, mSelectedTimeshow);
+
+            var destContainer = TimeshowService.AddTimeshow(containerDest, ts);
+
+            using var outStream = new MemoryStream();
+            DmzFileService.WriteDmzFile(destContainer, outStream);
+
+            outStream.Seek(0, SeekOrigin.Begin);
+            await FileUtil.SaveAs(JsRuntime, $"{destFile.FileName}_merged.dmz", outStream);
+
+            Toaster.Success("downloading...");
+            mIsLoading = false;
+            Clear();
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"Error merging timeshow: {ex.Message}");
+            Toaster.Error(ex.ToString());
+        }
+    }
+
+}
