@@ -258,20 +258,37 @@ namespace DmxControlUtilities.Services
 
         private static void UpdateSceneLists(DmzContainer container, Timeshow timeshow)
         {
-            var sceneListsFile = container.Files.First(f => f.FileName.Contains("Config/SceneLists.xml"));
-            sceneListsFile.FileStream.Seek(0, SeekOrigin.Begin);
+            var sceneListsFiles = container.Files.Where(f => f.FileName.StartsWith("Config/SceneLists") && f.FileName.EndsWith(".xml")).OrderByDescending(s => s.FileName).ToList();
 
-            var sceneListsXml = XDocument.Load(sceneListsFile.FileStream);
+            List<string> sceneIds = new List<string>();
 
-            var sceneListsElement = sceneListsXml.Descendants("TreeItem")
+            foreach (var file in sceneListsFiles)
+            {
+                file.FileStream.Seek(0, SeekOrigin.Begin);
+
+                var sceneListsXml = XDocument.Load(file.FileStream);
+
+                var sceneListsElement = sceneListsXml.Descendants("TreeItem")
+                    .Where(ti => (string?)ti.Attribute("Name") == "SceneLists")
+                    .First();
+
+                var fsceneIds = sceneListsElement.Elements("TreeItem").Where(ti => (string?)ti.Attribute("Name") == "SceneList").Select(ti => (string?)ti.Elements("Attribute").First(a => (string?)a.Attribute("Name") == "ID").Attribute("Value"));
+                sceneIds.AddRange(fsceneIds.Where(id => !string.IsNullOrEmpty(id))!);
+            }
+
+            var lastfile = sceneListsFiles.Last();
+
+            lastfile.FileStream.Seek(0, SeekOrigin.Begin);
+
+            var lastsceneListsXml = XDocument.Load(lastfile.FileStream);
+
+            var lastsceneListsElement = lastsceneListsXml.Descendants("TreeItem")
                 .Where(ti => (string?)ti.Attribute("Name") == "SceneLists")
                 .First();
 
-            int count = sceneListsElement.Descendants("TreeItem").Count(e => (string?)e.Attribute("Name") == "SceneList");
-
             foreach (var sceneList in timeshow.SceneLists)
             {
-                if (sceneListsElement.Elements("TreeItem").Any(ti => (string?)ti.Attribute("Name") == "SceneList" && ti.Elements("Attribute").Any(a => (string?)a.Attribute("Name") == "ID" && (string?)a.Attribute("Value") == sceneList.Id.ToString())))
+                if (sceneIds.Contains(sceneList.Id.ToString()))
                 {
                     Console.WriteLine($"SceneList with ID {sceneList.Id} already exists, skipping.");
                     continue; // Skip if the scene list already exists
@@ -280,21 +297,21 @@ namespace DmxControlUtilities.Services
                 var newSceneListElement = XElement.Parse(sceneList.Xml);
 
                 var numberAttr = newSceneListElement.Elements("Attribute").First(x => (string?)x.Attribute("Name") == "Number");
-                numberAttr.SetAttributeValue("Value", count + 1);
+                numberAttr.SetAttributeValue("Value", sceneIds.Count + 1);
 
                 var indexAttr = newSceneListElement.Elements("Attribute").First(x => (string?)x.Attribute("Name") == "ZZ_SAVE_INDEX");
-                indexAttr.SetAttributeValue("Value", count);
+                indexAttr.SetAttributeValue("Value", sceneIds.Count);
 
-                sceneListsElement.Add(newSceneListElement);
+                lastsceneListsElement.Add(newSceneListElement);
 
-                count++;
+                sceneIds.Add(sceneList.Id.ToString());
             }
 
             var sceneListXmlMs = new MemoryStream();
-            sceneListsXml.Save(sceneListXmlMs);
+            lastsceneListsXml.Save(sceneListXmlMs);
 
             sceneListXmlMs.Seek(0, SeekOrigin.Begin);
-            sceneListsFile.FileStream = sceneListXmlMs;
+            lastfile.FileStream = sceneListXmlMs;
         }
 
         private static void UpdateProjectExplorer(DmzContainer container, Timeshow timeshow)
