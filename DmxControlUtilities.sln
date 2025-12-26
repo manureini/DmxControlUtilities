@@ -1,11 +1,13 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio Version 17
-VisualStudioVersion = 17.13.35507.96 d17.13
+# Visual Studio Version 18
+VisualStudioVersion = 18.3.11312.210 d18.3
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DmxControlUtilities", "DmxControlUtilities\DmxControlUtilities.csproj", "{6826F9CB-3560-4680-8D6F-A82A636E5534}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DmxControlUtilitiesConsole", "DmxControlUtilitiesConsole\DmxControlUtilitiesConsole.csproj", "{BB404C63-FBDB-4BF5-AFAF-D9D122F50FDB}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DmxControlUtilities.Lib", "DmxControlUtilities.Lib\DmxControlUtilities.Lib.csproj", "{387DB2D3-FDDF-44AB-956A-530B38EA5BFD}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -21,6 +23,10 @@ Global
 		{BB404C63-FBDB-4BF5-AFAF-D9D122F50FDB}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{BB404C63-FBDB-4BF5-AFAF-D9D122F50FDB}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{BB404C63-FBDB-4BF5-AFAF-D9D122F50FDB}.Release|Any CPU.Build.0 = Release|Any CPU
+		{387DB2D3-FDDF-44AB-956A-530B38EA5BFD}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{387DB2D3-FDDF-44AB-956A-530B38EA5BFD}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{387DB2D3-FDDF-44AB-956A-530B38EA5BFD}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{387DB2D3-FDDF-44AB-956A-530B38EA5BFD}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

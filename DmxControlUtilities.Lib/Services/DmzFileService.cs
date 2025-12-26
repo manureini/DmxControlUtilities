@@ -1,7 +1,7 @@
-﻿using DmxControlUtilities.Models;
+﻿using DmxControlUtilities.Lib.Models;
 using System.IO.Compression;
 
-namespace DmxControlUtilities.Services
+namespace DmxControlUtilities.Lib.Services
 {
     public class DmzFileService
     {

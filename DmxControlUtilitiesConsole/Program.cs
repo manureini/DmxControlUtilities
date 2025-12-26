@@ -1,9 +1,6 @@
 ﻿
-
-
-
-using DmxControlUtilities.Models;
-using DmxControlUtilities.Services;
+using DmxControlUtilities.Lib.Models;
+using DmxControlUtilities.Lib.Services;
 
 var dmzFileService = new DmzFileService();
 var szeneListService = new SzeneListService();

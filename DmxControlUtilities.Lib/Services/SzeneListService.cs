@@ -1,7 +1,7 @@
-﻿using DmxControlUtilities.Models;
+﻿using DmxControlUtilities.Lib.Models;
 using System.Xml.Linq;
 
-namespace DmxControlUtilities.Services
+namespace DmxControlUtilities.Lib.Services
 {
     public class SzeneListService
     {

@@ -1,4 +1,4 @@
-﻿namespace DmxControlUtilities.Models
+﻿namespace DmxControlUtilities.Lib.Models
 {
     public class DmzContainer
     {      
