@@ -8,8 +8,8 @@ using DmxControlUtilities.Services;
 var dmzFileService = new DmzFileService();
 var szeneListService = new SzeneListService();
 
-var source = dmzFileService.ReadDmzFile(File.OpenRead("H:\\Nextcloud\\DMXControl\\0.0.159.dmz.zip"), "source.dmz");
-var dest = dmzFileService.ReadDmzFile(File.OpenRead("H:\\Nextcloud\\DMXControl\\ESG_SS25_01.dmz.zip"), "dest.dmz");
+var source = dmzFileService.ReadDmzFile(File.OpenRead("C:\\Users\\Manuel\\Downloads\\0.0.50.dmz"), "source.dmz");
+var dest = dmzFileService.ReadDmzFile(File.OpenRead("C:\\Users\\Manuel\\Downloads\\0.0.53.dmz"), "dest.dmz");
 
 var timeshowService = new TimeshowService(szeneListService);
 
@@ -19,8 +19,8 @@ var tesfy = szeneListService.GetSceneLists(source);
 
 var ts = timeshowService.ExtractTimeshow(source, new TimeshowMeta
 {
-    Id = Guid.Parse("5b037e3b-7dc1-4300-8a4c-b4b167fdb412"),
-    Name = "New Ts Show"
+    Id = Guid.Parse("d440346c-613d-4328-8cee-5c2b2bb470e2"),
+    Name = "F3"
 });
 
 

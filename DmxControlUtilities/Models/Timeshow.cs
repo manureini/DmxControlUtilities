@@ -15,5 +15,7 @@
         public List<DmzFile> Files { get; set; } = new List<DmzFile>();
 
         public List<SceneList> SceneLists { get; set; } = new List<SceneList>();
+
+        public List<Preset> Presets { get; set; } = new List<Preset>();
     }
 }

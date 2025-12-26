@@ -138,8 +138,45 @@ namespace DmxControlUtilities.Services
                 }
             }
 
+            ret.Presets = GetPresets(container);
+
             return ret;
         }
+
+        public List<Preset> GetPresets(DmzContainer container)
+        {
+            var files = container.Files.Where(f => f.FileName.StartsWith("Config/Presets") && !f.FileName.Contains("/Presets/"));
+
+            var presets = new List<Preset>();
+            foreach (var file in files)
+            {
+                file.FileStream.Seek(0, SeekOrigin.Begin);
+
+                var xmlContent = XDocument.Load(file.FileStream);
+                var presetElements = xmlContent.Descendants("TreeItem").Where(e => e.Attribute("Name")?.Value == "Preset");
+                foreach (var element in presetElements)
+                {
+                    var id = element.Descendants("Attribute")
+                        .First(a => a.Attribute("Name")?.Value == "ID")
+                        ?.Attribute("Value")?.Value;
+
+                    if (Guid.TryParse(id, out var parsedId))
+                    {
+                        presets.Add(new Preset
+                        {
+                            Id = parsedId,
+                            Xml = element.ToString()
+                        });
+                    }
+                }
+            }
+            return presets;
+        }
+
+
+
+
+
 
         public DmzContainer AddTimeshow(DmzContainer container, Timeshow timeshow)
         {
@@ -159,6 +196,7 @@ namespace DmxControlUtilities.Services
             UpdateSceneLists(container, timeshow);
             UpdateTimecodeShows(container, timeshow);
             UpdateResourceMetadata(container, timeshow);
+            UpdatePresets(container, timeshow);
 
             container.Files.AddRange(timeshow.Files);
 
@@ -262,6 +300,8 @@ namespace DmxControlUtilities.Services
 
             List<string> sceneIds = new List<string>();
 
+            int lastNumber = 1;
+
             foreach (var file in sceneListsFiles)
             {
                 file.FileStream.Seek(0, SeekOrigin.Begin);
@@ -274,6 +314,9 @@ namespace DmxControlUtilities.Services
 
                 var fsceneIds = sceneListsElement.Elements("TreeItem").Where(ti => (string?)ti.Attribute("Name") == "SceneList").Select(ti => (string?)ti.Elements("Attribute").First(a => (string?)a.Attribute("Name") == "ID").Attribute("Value"));
                 sceneIds.AddRange(fsceneIds.Where(id => !string.IsNullOrEmpty(id))!);
+
+                var numbers = sceneListsElement.Elements("TreeItem").Where(ti => (string?)ti.Attribute("Name") == "SceneList").Select(ti => (string?)ti.Elements("Attribute").First(a => (string?)a.Attribute("Name") == "Number").Attribute("Value"));
+                lastNumber = Math.Max(lastNumber, numbers.Max(n => int.TryParse(n, out var num) ? num : 0));
             }
 
             var lastfile = sceneListsFiles.Last();
@@ -294,10 +337,12 @@ namespace DmxControlUtilities.Services
                     continue; // Skip if the scene list already exists
                 }
 
+                lastNumber++;
+
                 var newSceneListElement = XElement.Parse(sceneList.Xml);
 
                 var numberAttr = newSceneListElement.Elements("Attribute").First(x => (string?)x.Attribute("Name") == "Number");
-                numberAttr.SetAttributeValue("Value", sceneIds.Count + 1);
+                numberAttr.SetAttributeValue("Value", lastNumber);
 
                 var indexAttr = newSceneListElement.Elements("Attribute").First(x => (string?)x.Attribute("Name") == "ZZ_SAVE_INDEX");
                 indexAttr.SetAttributeValue("Value", sceneIds.Count);
@@ -411,6 +456,61 @@ namespace DmxControlUtilities.Services
 
             ms.Seek(0, SeekOrigin.Begin);
             projectExplorerFile.FileStream = ms;
+        }
+
+        private static void UpdatePresets(DmzContainer container, Timeshow timeshow)
+        {
+            var presetListFiles = container.Files.Where(f => f.FileName.StartsWith("Config/Presets") && f.FileName.EndsWith(".xml")).OrderByDescending(s => s.FileName).ToList();
+
+            List<string> presetIds = new List<string>();
+
+            foreach (var file in presetListFiles)
+            {
+                file.FileStream.Seek(0, SeekOrigin.Begin);
+
+                var presetListsXml = XDocument.Load(file.FileStream);
+
+                var sceneListsElement = presetListsXml.Descendants("TreeItem")
+                    .Where(ti => (string?)ti.Attribute("Name") == "Presets")
+                    .First();
+
+                var fsceneIds = sceneListsElement.Elements("TreeItem").Where(ti => (string?)ti.Attribute("Name") == "Preset").Select(ti => (string?)ti.Elements("Attribute").First(a => (string?)a.Attribute("Name") == "ID").Attribute("Value"));
+                presetIds.AddRange(fsceneIds.Where(id => !string.IsNullOrEmpty(id))!);
+            }
+
+            var lastfile = presetListFiles.Last();
+
+            lastfile.FileStream.Seek(0, SeekOrigin.Begin);
+
+            var lastsceneListsXml = XDocument.Load(lastfile.FileStream);
+
+            var lastsceneListsElement = lastsceneListsXml.Descendants("TreeItem")
+                .Where(ti => (string?)ti.Attribute("Name") == "Presets")
+                .First();
+
+            foreach (var preset in timeshow.Presets)
+            {
+                if (presetIds.Contains(preset.Id.ToString()))
+                {
+                    Console.WriteLine($"Preset with ID {preset.Id} already exists, skipping.");
+                    continue; // Skip if the scene list already exists
+                }
+
+                var newSceneListElement = XElement.Parse(preset.Xml);
+
+                var indexAttr = newSceneListElement.Elements("Attribute").First(x => (string?)x.Attribute("Name") == "ZZ_SAVE_INDEX");
+                indexAttr.SetAttributeValue("Value", presetIds.Count);
+
+                lastsceneListsElement.Add(newSceneListElement);
+
+                presetIds.Add(preset.Id.ToString());
+            }
+
+            var presetListXmlMs = new MemoryStream();
+            lastsceneListsXml.Save(presetListXmlMs);
+
+            presetListXmlMs.Seek(0, SeekOrigin.Begin);
+            lastfile.FileStream = presetListXmlMs;
         }
 
         private static XElement GetResourcesElement(string pName, bool value)
