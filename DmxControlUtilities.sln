@@ -9,6 +9,10 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DmxControlUtilitiesConsole"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DmxControlUtilities.Lib", "DmxControlUtilities.Lib\DmxControlUtilities.Lib.csproj", "{387DB2D3-FDDF-44AB-956A-530B38EA5BFD}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DmxControlUtilitiesTimecodeSyncer", "DmxControlUtilitiesTimecodeSyncer\DmxControlUtilitiesTimecodeSyncer.csproj", "{78A96F5A-12DE-42E2-98B3-C5E727319B3D}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LumosProtobuf", "DMXControl3-Network-Interface\LumosProtobuf.csproj", "{8AF58CC3-EF68-7329-7DFD-A960A908729A}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -27,6 +31,14 @@ Global
 		{387DB2D3-FDDF-44AB-956A-530B38EA5BFD}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{387DB2D3-FDDF-44AB-956A-530B38EA5BFD}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{387DB2D3-FDDF-44AB-956A-530B38EA5BFD}.Release|Any CPU.Build.0 = Release|Any CPU
+		{78A96F5A-12DE-42E2-98B3-C5E727319B3D}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{78A96F5A-12DE-42E2-98B3-C5E727319B3D}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{78A96F5A-12DE-42E2-98B3-C5E727319B3D}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{78A96F5A-12DE-42E2-98B3-C5E727319B3D}.Release|Any CPU.Build.0 = Release|Any CPU
+		{8AF58CC3-EF68-7329-7DFD-A960A908729A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{8AF58CC3-EF68-7329-7DFD-A960A908729A}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{8AF58CC3-EF68-7329-7DFD-A960A908729A}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{8AF58CC3-EF68-7329-7DFD-A960A908729A}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

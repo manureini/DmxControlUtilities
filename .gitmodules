@@ -1,0 +1,3 @@
+[submodule "DMXControl3-Network-Interface"]
+	path = DMXControl3-Network-Interface
+	url = https://github.com/DMXControl/DMXControl3-Network-Interface.git
