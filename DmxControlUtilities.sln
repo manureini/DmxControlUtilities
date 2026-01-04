@@ -1,9 +1,9 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 18
-VisualStudioVersion = 18.3.11312.210 d18.3
+VisualStudioVersion = 18.3.11312.210
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DmxControlUtilities", "DmxControlUtilities\DmxControlUtilities.csproj", "{6826F9CB-3560-4680-8D6F-A82A636E5534}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DmxControlUtilities.Files", "DmxControlUtilities\DmxControlUtilities.Files.csproj", "{6826F9CB-3560-4680-8D6F-A82A636E5534}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DmxControlUtilitiesConsole", "DmxControlUtilitiesConsole\DmxControlUtilitiesConsole.csproj", "{BB404C63-FBDB-4BF5-AFAF-D9D122F50FDB}"
 EndProject

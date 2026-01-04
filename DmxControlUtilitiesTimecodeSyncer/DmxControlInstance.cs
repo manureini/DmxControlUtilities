@@ -29,7 +29,6 @@ namespace DmxControlUtilitiesTimecodeSyncer
         protected TimecodeClientClient _timecodeClientClient;
         protected Metadata _connectionClientDataHostMetadata;
 
-
         public EventManager EventManager { get; set; }
 
         public DmxControlInstance(IPEndPoint endpoint)
@@ -131,8 +130,8 @@ namespace DmxControlUtilitiesTimecodeSyncer
                         }
                         else if (timecodeState.State == 66)
                         {
-                            RunningTimecodeShows.Remove(name);
-                            EventManager.StopAllTimecodeShow(name);
+                            RunningTimecodeShows.Clear();
+                            EventManager.StopAllTimecodeShows();
                         }
                     }
                 }
@@ -156,6 +155,20 @@ namespace DmxControlUtilitiesTimecodeSyncer
                 Action = ETimecodeAction.Play,
                 TimecodeId = ts.Id
             }, _connectionClientDataHostMetadata);
+        }
+
+        public async Task StopAllTimecodeShows()
+        {
+            foreach (var ts in TimecodeShows)
+            {
+                var response2 = await _timecodeClientClient.TimecodeActionAsync(new LumosProtobuf.Timecode.TimecodeActionRequest
+                {
+                    Action = ETimecodeAction.Stop,
+                    TimecodeId = ts.Id
+                }, _connectionClientDataHostMetadata);
+            }
+
+            RunningTimecodeShows.Clear();
         }
 
         public async Task StopTimecodeShow(string name)

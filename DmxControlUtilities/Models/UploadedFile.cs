@@ -1,6 +1,6 @@
 ﻿using MComponents.Files;
 
-namespace DmxControlUtilities.Models
+namespace DmxControlUtilities.Files.Models
 {
     public class UploadedFile : IFile
     {

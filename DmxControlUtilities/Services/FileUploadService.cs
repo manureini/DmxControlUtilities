@@ -1,8 +1,8 @@
-﻿using DmxControlUtilities.Models;
+﻿using DmxControlUtilities.Files.Models;
 using MComponents.Files;
 using Microsoft.AspNetCore.Components.Forms;
 
-namespace DmxControlUtilities.Services
+namespace DmxControlUtilities.Files.Services
 {
     public class FileUploadService : IFileUploadService
     {

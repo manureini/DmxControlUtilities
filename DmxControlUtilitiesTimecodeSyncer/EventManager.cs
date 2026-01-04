@@ -22,11 +22,11 @@ namespace DmxControlUtilitiesTimecodeSyncer
             }
         }
 
-        public void StopAllTimecodeShow(string name)
+        public void StopAllTimecodeShows()
         {
             foreach (var instance in Instances)
             {
-                _ = instance.StopTimecodeShow(name);
+                _ = instance.StopAllTimecodeShows();
             }
         }
     }
