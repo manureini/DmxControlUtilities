@@ -1,0 +1,80 @@
+﻿@page "/"
+
+@implements IDisposable
+
+@inject DmxControlInstanceService InstanceService
+
+<PageTitle>Instanzen</PageTitle>
+
+<button @onclick="StopAll">Stop All</button>
+
+
+<input type="text" @bind="_inputAllValue" />
+
+<button @onclick="StartOnAll">Start All</button>
+
+
+<div>
+
+	@foreach (var instance in InstanceService.Instances)
+	{
+		<DmxControlInstanceView DmxControlInstance="instance" OnClickRemove="() => OnRemove(instance)" />
+	}
+
+</div>
+
+@code {
+
+	protected bool isActive = true;
+
+	protected override void OnInitialized()
+	{
+		base.OnInitialized();
+
+		_ = Task.Run(async () =>
+		{
+			while (isActive)
+			{
+				_ = InvokeAsync(() =>
+					{
+						StateHasChanged();
+					});
+
+				await Task.Delay(1000);
+			}
+		});
+	}
+
+	protected string _inputAllValue = string.Empty;
+
+	protected async Task StopAll()
+	{
+		InstanceService.StopAllTimecodeShows();
+	}
+
+	protected void StartOnAll()
+	{
+		InstanceService.StartAllTimecodeShow(_inputAllValue);
+	}
+
+	protected void OnRemove(DmxControlInstance instance)
+	{
+		InstanceService.RemoveInstance(instance);
+	}
+
+	public void Dispose()
+	{
+		isActive = false;
+	}
+
+}
+
+
+
+
+
+
+
+
+
+
