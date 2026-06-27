@@ -1,5 +1,7 @@
 ﻿
 using DmxControlUtilities.Web.Services;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace DmxControlUtilities.Web.Background
 {
@@ -32,11 +34,13 @@ namespace DmxControlUtilities.Web.Background
                         }
 
                         var instance = new DmxControlInstance(endpoint);
-                        await instance.Init();
 
-                        _instanceService.RegisterInstance(instance);
-
-                        Console.WriteLine($"Initialized instance at {endpoint}");
+                        var task = instance.Init();
+                        if (await Task.WhenAny(task, Task.Delay(TimeSpan.FromSeconds(30))) == task)
+                        {
+                            _instanceService.RegisterInstance(instance);
+                            Console.WriteLine($"Initialized instance at {endpoint}");
+                        }
                     }
 
                     await Task.Delay(3000);

@@ -1,0 +1,24 @@
+﻿@page "/connect"
+
+@using System.Net
+@using LumosProtobuf
+@inject DiscoveryService DiscoveryService
+
+<h3>Connect</h3>
+
+<input type="text" @bind="_inputIp" />
+
+<button @onclick="OnClickConnect">Connect</button>
+
+@code {
+
+    protected string _inputIp = string.Empty;
+
+    protected void OnClickConnect()
+    {
+        var ipEndpoint = IPEndPoint.Parse(_inputIp + ":" + NetConstants.UMBRA_LISTEN_PORT);
+        DiscoveryService.Endpoints.Add(ipEndpoint);
+        _inputIp = string.Empty;
+    }
+
+}

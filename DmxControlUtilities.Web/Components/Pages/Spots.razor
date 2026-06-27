@@ -1,0 +1,117 @@
+﻿@page "/spots"
+@using DmxControlUtilities.Web.Models
+@using System.Numerics
+
+<PageTitle>Spots</PageTitle>
+
+@inject FixtureService FixtureService
+@inject DmxControlInstanceService DmxControlInstanceService
+
+
+<div id="spots-container">
+
+	<div id="floor" @onmousedown="OnMouseDown" @onmouseup="OnMouseUp" @onmousemove="OnFloorClicked" @onmouseleave="OnMouseUp">
+
+		<div id="target" style="@($"top: {TargetY - 30}px; left: {TargetX - 30}px")"></div>
+
+		@foreach (var fixture in _fixtures)
+		{
+			<div class="fixture" style="@($"top: {fixture.Y * ScaleY}px; left: {fixture.X * ScaleX}px")">
+				<div class="icon"></div>
+				<span class="label">@fixture.Name</span>
+			</div>	
+		}
+
+	</div>
+
+
+	<ul>
+
+		@foreach (var fixture in _fixtures)
+		{
+			<div>
+				<span>@fixture.Name</span>
+				<input @bind-value="fixture.X" />
+				<input @bind-value="fixture.Y" />
+				<input @bind-value="fixture.Z" />
+			</div>
+		}
+
+	</ul>
+
+</div>
+
+@code {
+
+	protected float ScaleX = 100;
+	protected float ScaleY = 100;
+
+	protected int TargetX;
+	protected int TargetY;
+
+	protected bool _mouseDown;
+
+	protected List<Fixture> _fixtures = new();
+	protected DmxControlInstance _dmxControlInstance;
+
+	protected override async Task OnInitializedAsync()
+	{
+		_dmxControlInstance = DmxControlInstanceService.Instances.First();
+		_fixtures = await _dmxControlInstance.GetDevices();
+	}
+
+
+	protected void OnMouseDown()
+	{
+		_mouseDown = true;
+	}
+
+	protected void OnMouseUp()
+	{
+		_mouseDown = false;
+	}
+
+	protected void OnFloorClicked(MouseEventArgs args)
+	{
+		if (!_mouseDown)
+			return;
+
+		TargetX = (int)args.OffsetX;
+		TargetY = (int)args.OffsetY;
+
+
+		var targetPosX = TargetX / ScaleX;
+		var targetPosY = TargetY / ScaleY;
+
+		Console.WriteLine("------");
+	//	Console.WriteLine(targetPosX);
+	//	Console.WriteLine(targetPosY);
+
+		foreach (var fixture in _fixtures.Where(f => f.X != 0))
+		{
+			var v = new Vector3(
+				targetPosX - fixture.X,
+				targetPosY - fixture.Y,
+				0f - fixture.Z
+			);
+
+			float yawDeg = MathF.Atan2(v.Y, v.X) * 180f / MathF.PI;
+
+			Console.WriteLine(yawDeg);
+
+			float pitchDeg = MathF.Atan2(v.Z, MathF.Sqrt(v.X * v.X + v.Y * v.Y)) * 180f / MathF.PI;
+
+			Console.WriteLine(pitchDeg);
+
+			_ = _dmxControlInstance.UpdateFixture(fixture.Id, yawDeg, pitchDeg);
+		}
+
+	}
+
+
+
+
+
+
+
+}

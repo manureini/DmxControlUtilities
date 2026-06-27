@@ -12,6 +12,8 @@ using System.Text;
 using UmbraClient;
 using static UmbraClient.TimecodeClient;
 using static UmbraClient.ProjectClient;
+using static UmbraClient.ProgrammerClient;
+using static UmbraClient.DeviceClient;
 
 namespace DmxControlUtilities.Web.Services
 {
@@ -31,7 +33,8 @@ namespace DmxControlUtilities.Web.Services
 
         protected TimecodeClientClient _timecodeClientClient;
         protected ProjectClientClient _projectClientClient;
-
+        protected ProgrammerClientClient _programmerClient;
+        protected DeviceClientClient _deviceClientClient;
 
         protected Metadata _connectionClientDataHostMetadata;
 
@@ -94,7 +97,7 @@ namespace DmxControlUtilities.Web.Services
                 Username = "Tool",
                 PasswordHash = "123",
 
-            }, connectionClientData.HostMetadata);
+            }, _connectionClientDataHostMetadata);
 
             var userContextResponse = await getUserContextCall.ResponseAsync;
 
@@ -109,11 +112,99 @@ namespace DmxControlUtilities.Web.Services
 
             _projectClientClient = new ProjectClientClient(channel);
 
-            //     var state = await _projectClientClient.GetProjectsAsync(request);
+            var state = await _projectClientClient.GetProjectsAsync(request, _connectionClientDataHostMetadata);
 
             _timecodeClientClient = new TimecodeClientClient(channel);
+            _programmerClient = new ProgrammerClientClient(channel);
+            _deviceClientClient = new DeviceClientClient(channel);
 
-            await UpdateTimecodeshows();
+
+            _ = Task.Run(async () =>
+            {
+
+
+
+
+            });
+
+
+
+            /*
+            _ = Task.Run(async () =>
+            {
+                var receiveCall = _programmerClient.ReceiveProgrammerChanges(new GetRequest
+                {
+                    RequestId = Guid.NewGuid().ToString(),
+                }, _connectionClientDataHostMetadata);
+
+                await foreach (var change in receiveCall.ResponseStream.ReadAllAsync())
+                {
+
+
+                    var channel2 = GrpcChannel.ForAddress(baseAddress);
+
+                    var deviceClient = new DeviceClientClient(channel2);
+
+                    var devices = await deviceClient.GetDevicesAsync(new GetMultipleRequest()
+                    {
+                        RequestId = Guid.NewGuid().ToString(),
+                        UserContextId = UserContextId,
+                    }, _connectionClientDataHostMetadata);
+
+                    var firstDevice = devices.Devices.First();
+
+                    var tempDeviceGroup = await deviceClient.GetTemporaryDeviceGroupAsync(new GetTemporaryDeviceGroupRequest()
+                    {
+                        DeviceAndGroupIDs = { firstDevice.Id },
+                        RequestId = Guid.NewGuid().ToString(),
+                        UserContextId = UserContextId,
+                    }, _connectionClientDataHostMetadata);
+
+                    var request = new GetMultipleRequest()
+                    {
+                        RequestId = Guid.NewGuid().ToString(),
+                        UserContextId = UserContextId,
+                    };
+
+                    request.IdFilter.Add(tempDeviceGroup.Id);
+
+                    var groups = await deviceClient.GetDeviceGroupsAsync(request, _connectionClientDataHostMetadata);
+
+                    var firstProp = groups.DeviceGroups.First().Properties.First();
+
+                    var rest = await deviceClient.GetDevicePropertyCurrentValueAsync(new DevicePropertyValueRequest()
+                    {
+                        DeviceOrGroupId = tempDeviceGroup.Id,
+                        PropertyId = firstProp.Id,
+                        Type = EValueType.CurrentPropertyvalue,
+                        UserContextId = UserContextId
+
+                    }, _connectionClientDataHostMetadata);
+
+
+                    var fannedValue = rest.PropertyValue.Fpv.FannedValues.First();
+
+
+
+
+
+
+                }
+            });
+
+            */
+
+            /*
+            var state = await _programmerClient.GetProgrammerValue(new DevicePropertyValueRequest()
+            {
+
+            })
+            */
+
+            // await UpdateTimecodeshows();
+
+
+
 
             /*
             _ = Task.Run(async () =>
@@ -121,7 +212,7 @@ namespace DmxControlUtilities.Web.Services
                 var receiveCall = _timecodeClientClient.ReceiveTimecodeStateChanges(new GetRequest
                 {
                     RequestId = Guid.NewGuid().ToString(),
-                }, connectionClientData.HostMetadata);
+                }, _connectionClientDataHostMetadata);
 
                 await foreach (var timecodeState in receiveCall.ResponseStream.ReadAllAsync())
                 {
@@ -208,5 +299,149 @@ namespace DmxControlUtilities.Web.Services
                 TimecodeId = ts.Id
             }, _connectionClientDataHostMetadata);
         }
+
+        public async Task<List<Fixture>> GetDevices()
+        {
+            var devices = await _deviceClientClient.GetDevicesAsync(new GetMultipleRequest()
+            {
+                RequestId = Guid.NewGuid().ToString(),
+                UserContextId = UserContextId,
+            }, _connectionClientDataHostMetadata);
+
+            List<Fixture> fixtures = new List<Fixture>();
+
+            foreach (var device in devices.Devices)
+            {
+                var tempDeviceGroup = await _deviceClientClient.GetTemporaryDeviceGroupAsync(new GetTemporaryDeviceGroupRequest()
+                {
+                    DeviceAndGroupIDs = { device.Id },
+                    RequestId = Guid.NewGuid().ToString(),
+                    UserContextId = UserContextId,
+                }, _connectionClientDataHostMetadata);
+
+                var fixture = new Fixture()
+                {
+                    Id = device.Id,
+                    Name = device.Name,
+                };
+
+                fixtures.Add(fixture);
+            }
+
+            return fixtures;
+        }
+
+
+        public async Task UpdateFixture(string fixtureId, float yaw, float pitch)
+        {
+
+
+           
+ 
+            var request = new GetMultipleRequest()
+            {
+                RequestId = Guid.NewGuid().ToString(),
+                UserContextId = UserContextId,
+            };
+
+            request.IdFilter.Add(fixtureId);
+
+            var groups = await _deviceClientClient.GetDeviceGroupsAsync(request, _connectionClientDataHostMetadata);
+
+
+
+            var firstProp = groups.DeviceGroups.First().Properties.First();
+
+            var rest = await _deviceClientClient.GetDevicePropertyCurrentValueAsync(new DevicePropertyValueRequest()
+            {
+                DeviceOrGroupId = fixtureId,
+                PropertyId = firstProp.Id,
+                Type = EValueType.CurrentPropertyvalue,
+                UserContextId = UserContextId
+
+            }, _connectionClientDataHostMetadata);
+
+
+            var fannedValue = rest.PropertyValue.Fpv.FannedValues.First();
+
+
+            fannedValue.Position.Pan = yaw;
+            fannedValue.Position.Tilt = 90 - MapAngleToMinus90To90(pitch);
+
+
+            var respo = await _programmerClient.SetProgrammerValueAsync(new SetProgrammerValueRequest()
+            {
+                UserContextId = UserContextId,
+                PropertyId = firstProp.Id,
+
+                GroupHandling = EGroupHandling.ConcatGroups,
+                GroupId = fixtureId,
+                Dpv = new DevicePropertyValue()
+                {
+                    Position = fannedValue.Position
+                }
+
+
+            }, _connectionClientDataHostMetadata);
+
+
+
+            /*
+             * 
+             * 
+
+
+
+
+            var state = await _programmerClient.GetProgrammerValueAsync(new DevicePropertyValueRequest()
+            {
+                DeviceOrGroupId = tempDeviceGroup.Id,
+                PropertyId = firstProp.Id,
+                Type = EValueType.Programmer,
+            }, _connectionClientDataHostMetadata);
+
+
+
+
+            var rest2 = await _deviceClientClient.GetDevicePropertyCurrentValueAsync(new DevicePropertyValueRequest()
+            {
+                DeviceOrGroupId = tempDeviceGroup.Id,
+                PropertyId = firstProp.Id,
+                Type = EValueType.CurrentPropertyvalue,
+                UserContextId = UserContextId
+
+            }, _connectionClientDataHostMetadata);
+
+
+            var fannedValue2 = rest2.PropertyValue.Fpv.FannedValues.First();
+            */
+
+
+        }
+
+        double MapAngleToMinus90To90(double angle)
+        {
+            // 1. Normalisieren auf 0–360
+            angle %= 360;
+            if (angle < 0)
+                angle += 360;
+
+            // 2. In -180 .. 180 bringen
+            if (angle > 180)
+                angle -= 360;
+
+            // 3. Spiegeln auf -90 .. 90
+            if (angle > 90)
+                angle = 180 - angle;
+            else if (angle < -90)
+                angle = -180 - angle;
+
+            return angle;
+        }
+
+
+
+
+
     }
 }

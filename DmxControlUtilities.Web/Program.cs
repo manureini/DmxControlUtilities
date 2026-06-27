@@ -16,6 +16,7 @@ namespace DmxControlUtilities.Web
 
             builder.Services.AddSingleton<DiscoveryService>();
             builder.Services.AddSingleton<DmxControlInstanceService>();
+            builder.Services.AddSingleton<FixtureService>();
 
             builder.Services.AddHostedService<DiscoverBackgroundService>();
 

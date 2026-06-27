@@ -1,0 +1,55 @@
+﻿
+
+#spots-container {
+    display: flex;
+}
+
+#floor {
+    width: 600px;
+    height: 1000px;
+    border: solid black 1px;
+    position: relative;
+}
+
+#target {
+    position: relative;
+    z-index: 1000;
+    background: red;
+    width: 0px;
+    height: 0px;
+}
+
+    #target::after, #target::before {
+        content: "";
+        background: black;
+        border-radius: 2px;
+        position: absolute;
+    }
+
+    #target::after {
+        left: 30px;
+        width: 10px;
+        height: 20px;
+        box-shadow: 0 50px black;
+    }
+
+    #target::before {
+        top: 30px;
+        width: 20px;
+        height: 10px;
+        box-shadow: 50px 0 black;
+    }
+
+.fixture {
+    position: absolute;
+    user-select: none;
+}
+
+    .fixture .icon {
+        width: 20px;
+        height: 20px;
+        background: blue;
+    }
+
+    .fixture label {
+    }
