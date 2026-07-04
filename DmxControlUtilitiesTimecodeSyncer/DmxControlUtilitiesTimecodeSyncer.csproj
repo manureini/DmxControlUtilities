@@ -13,7 +13,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\DMXControl3-Network-Interface\LumosProtobuf.csproj" />
+    <ProjectReference Include="..\DMXControl3-Network-Interface\csharp\LumosProtobuf.csproj" />
   </ItemGroup>
 
 </Project>

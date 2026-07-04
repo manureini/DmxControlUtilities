@@ -24,26 +24,34 @@ namespace DmxControlUtilities.Web.Background
             {
                 while (true)
                 {
-                    foreach (var endpoint in _discoveryService.Endpoints)
+                    try
                     {
-                        var existing = _instanceService.Instances.FirstOrDefault(i => i.IPEndPoint == endpoint);
-                        if (existing != null)
+                        foreach (var endpoint in _discoveryService.Endpoints)
                         {
-                            await Update(existing);
-                            continue;
+                            var existing = _instanceService.Instances.FirstOrDefault(i => i.IPEndPoint == endpoint);
+                            if (existing != null)
+                            {
+                                await Update(existing);
+                                continue;
+                            }
+
+                            var instance = new DmxControlInstance(endpoint);
+
+                            var task = instance.Init();
+                            if (await Task.WhenAny(task, Task.Delay(TimeSpan.FromSeconds(30))) == task)
+                            {
+                                _instanceService.RegisterInstance(instance);
+                                Console.WriteLine($"Initialized instance at {endpoint}");
+                            }
                         }
 
-                        var instance = new DmxControlInstance(endpoint);
-
-                        var task = instance.Init();
-                        if (await Task.WhenAny(task, Task.Delay(TimeSpan.FromSeconds(30))) == task)
-                        {
-                            _instanceService.RegisterInstance(instance);
-                            Console.WriteLine($"Initialized instance at {endpoint}");
-                        }
+                        await Task.Delay(3000);
                     }
-
-                    await Task.Delay(3000);
+                    catch (Exception e)
+                    {
+                        Console.WriteLine(e);
+                        await Task.Delay(10000);
+                    }
                 }
             });
 
@@ -56,6 +64,7 @@ namespace DmxControlUtilities.Web.Background
                 return;
 
             await existing.UpdateTimecodeshows();
+            await existing.UpdateGroups();
         }
     }
 }

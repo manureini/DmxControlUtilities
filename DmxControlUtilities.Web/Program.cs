@@ -1,6 +1,7 @@
 using DmxControlUtilities.Web.Background;
 using DmxControlUtilities.Web.Components;
 using DmxControlUtilities.Web.Services;
+using MComponents;
 
 namespace DmxControlUtilities.Web
 {
@@ -19,6 +20,15 @@ namespace DmxControlUtilities.Web
             builder.Services.AddSingleton<FixtureService>();
 
             builder.Services.AddHostedService<DiscoverBackgroundService>();
+
+            builder.Services.AddMComponents(o =>
+            {
+
+                o.RegisterStringLocalizer = true;
+                o.RegisterResourceLocalizer = true;
+                o.RegisterNavigation = true;
+
+            });
 
             var app = builder.Build();
 

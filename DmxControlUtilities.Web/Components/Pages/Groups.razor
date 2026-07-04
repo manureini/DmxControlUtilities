@@ -1,0 +1,77 @@
+﻿@page "/groups"
+
+@using DmxControlUtilities.Web.Models
+@using LumosProtobuf
+@using MComponents.MSelect
+
+<PageTitle>Groups</PageTitle>
+
+@inject FixtureService FixtureService
+@inject DmxControlInstanceService DmxControlInstanceService
+
+
+<div>
+
+    <span>Gruppe:</span>
+
+    <MSelect @bind-Value="@_selectedGroup" Property="@nameof(DeviceGroupDescriptor.Name)" Options="_groups" />
+
+
+    <br />
+    <br />
+
+    <div class="preset-container">
+
+        @foreach (var preset in _presets)
+        {
+            <PresetButton Preset="preset" OnClick="OnPresetButtonClicked" />
+        }
+
+    </div>
+
+
+</div>
+
+@code {
+
+    protected List<DeviceGroupDescriptor> _groups = new();
+    protected DeviceGroupDescriptor? _selectedGroup;
+
+
+    protected List<PresetModel> _presets = new();
+
+    protected DmxControlInstance _dmxControlInstance = null!;
+
+
+    protected override async Task OnInitializedAsync()
+    {
+        _dmxControlInstance = DmxControlInstanceService.Instances.FirstOrDefault();
+
+        if (_dmxControlInstance == null)
+            return;
+
+        _groups = _dmxControlInstance.DeviceGroups;
+
+        _selectedGroup = _groups.FirstOrDefault(g => g.Name.ToLower().StartsWith("main")) ?? _groups.FirstOrDefault();
+
+        _presets = await _dmxControlInstance.GetPresets();
+    }
+
+
+    protected async Task OnPresetButtonClicked(PresetModel preset)
+    {
+        if (_selectedGroup == null)
+        {
+            return;
+        }
+
+        await _dmxControlInstance.SetProgrammerColor(_selectedGroup.Id, preset.Color);
+
+    }
+
+ 
+
+
+
+
+}

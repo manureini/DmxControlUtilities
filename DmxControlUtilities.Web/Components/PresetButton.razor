@@ -1,0 +1,13 @@
+﻿@using DmxControlUtilities.Web.Models
+
+<div class="preset-button" style="background-color: @(Preset.HtmlColor)" @onclick="@(async () => await OnClick.InvokeAsync(Preset))">
+</div>
+
+@code {
+
+    [Parameter]
+    public PresetModel Preset { get; set; } = null!;
+
+    [Parameter]
+    public EventCallback<PresetModel> OnClick { get; set; }
+}

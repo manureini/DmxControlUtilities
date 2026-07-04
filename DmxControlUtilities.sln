@@ -1,7 +1,7 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio Version 17
-VisualStudioVersion = 17.14.36623.8 d17.14
+# Visual Studio Version 18
+VisualStudioVersion = 18.8.11918.235 insiders
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DmxControlUtilities.Files", "DmxControlUtilities\DmxControlUtilities.Files.csproj", "{6826F9CB-3560-4680-8D6F-A82A636E5534}"
 EndProject
@@ -11,9 +11,11 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DmxControlUtilities.Lib", "
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DmxControlUtilitiesTimecodeSyncer", "DmxControlUtilitiesTimecodeSyncer\DmxControlUtilitiesTimecodeSyncer.csproj", "{78A96F5A-12DE-42E2-98B3-C5E727319B3D}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LumosProtobuf", "DMXControl3-Network-Interface\LumosProtobuf.csproj", "{8AF58CC3-EF68-7329-7DFD-A960A908729A}"
-EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DmxControlUtilities.Web", "DmxControlUtilities.Web\DmxControlUtilities.Web.csproj", "{229AA25F-7633-498A-8596-DCA3BAE3F199}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MComponents", "..\..\..\..\..\GitHub\MComponents\MComponents\MComponents.csproj", "{0847FEAD-7F36-888C-8DDA-47847C8BDA51}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LumosProtobuf", "DMXControl3-Network-Interface\csharp\LumosProtobuf.csproj", "{D79B4F45-EF07-98EB-47E0-6F4791EA642F}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -37,14 +39,18 @@ Global
 		{78A96F5A-12DE-42E2-98B3-C5E727319B3D}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{78A96F5A-12DE-42E2-98B3-C5E727319B3D}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{78A96F5A-12DE-42E2-98B3-C5E727319B3D}.Release|Any CPU.Build.0 = Release|Any CPU
-		{8AF58CC3-EF68-7329-7DFD-A960A908729A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{8AF58CC3-EF68-7329-7DFD-A960A908729A}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{8AF58CC3-EF68-7329-7DFD-A960A908729A}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{8AF58CC3-EF68-7329-7DFD-A960A908729A}.Release|Any CPU.Build.0 = Release|Any CPU
 		{229AA25F-7633-498A-8596-DCA3BAE3F199}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{229AA25F-7633-498A-8596-DCA3BAE3F199}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{229AA25F-7633-498A-8596-DCA3BAE3F199}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{229AA25F-7633-498A-8596-DCA3BAE3F199}.Release|Any CPU.Build.0 = Release|Any CPU
+		{0847FEAD-7F36-888C-8DDA-47847C8BDA51}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{0847FEAD-7F36-888C-8DDA-47847C8BDA51}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{0847FEAD-7F36-888C-8DDA-47847C8BDA51}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{0847FEAD-7F36-888C-8DDA-47847C8BDA51}.Release|Any CPU.Build.0 = Release|Any CPU
+		{D79B4F45-EF07-98EB-47E0-6F4791EA642F}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{D79B4F45-EF07-98EB-47E0-6F4791EA642F}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{D79B4F45-EF07-98EB-47E0-6F4791EA642F}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{D79B4F45-EF07-98EB-47E0-6F4791EA642F}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
