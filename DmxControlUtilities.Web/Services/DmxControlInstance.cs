@@ -506,7 +506,6 @@ namespace DmxControlUtilities.Web.Services
 
         public async Task SetProgrammerColor(string groupId, Color color)
         {
-
             var request5 = new GetMultipleRequest()
             {
                 RequestId = Guid.NewGuid().ToString(),
@@ -560,5 +559,45 @@ namespace DmxControlUtilities.Web.Services
                 Fpv = fannedPropertyValue
             }, _connectionClientDataHostMetadata);
         }
+
+
+        public async Task SetProgrammerDimmer(string groupId, int value)
+        {
+            var request5 = new GetMultipleRequest()
+            {
+                RequestId = Guid.NewGuid().ToString(),
+                UserContextId = UserContextId,
+            };
+
+            request5.IdFilter.Add(groupId);
+
+            var groups = await _deviceClientClient.GetDeviceGroupsAsync(request5, _connectionClientDataHostMetadata);
+
+            var firstProp = groups.DeviceGroups.First().Properties.First(c => c.Name == "Dimmer");
+
+            var rest = await _deviceClientClient.GetDevicePropertyCurrentValueAsync(new DevicePropertyValueRequest()
+            {
+                DeviceOrGroupId = groupId,
+                PropertyId = firstProp.Id,
+                Type = EValueType.CurrentPropertyvalue,
+                UserContextId = UserContextId
+
+            }, _connectionClientDataHostMetadata);
+
+            var respo = await _programmerClient.SetProgrammerValueAsync(new SetProgrammerValueRequest()
+            {
+                UserContextId = UserContextId,
+                PropertyId = firstProp.Id,
+                GroupId = groupId,
+                Dpv = new DevicePropertyValue()
+                {
+                    DoubleValue = value
+                }
+            }, _connectionClientDataHostMetadata);
+        }
+
+
+
+
     }
 }

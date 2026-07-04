@@ -1,0 +1,28 @@
+﻿<div style="display: flex; flex-direction: column;">
+
+    <input type="range"
+           min="0"
+           max="100"
+           step="1"
+           value="@Value"
+           style="flex-grow: 1"
+           @oninput="OnInputChanged" />
+
+</div>
+
+@code {
+    [Parameter]
+    public int Value { get; set; }
+
+    [Parameter]
+    public EventCallback<int> ValueChanged { get; set; }
+
+    private async Task OnInputChanged(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out var value))
+        {
+            Value = value;
+            await ValueChanged.InvokeAsync(value);
+        }
+    }
+}

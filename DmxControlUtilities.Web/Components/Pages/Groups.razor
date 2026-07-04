@@ -18,6 +18,9 @@
 
 
     <br />
+
+    <Slider @bind-Value="_dimmerValue" @bind-Value:after="OnSliderChanged" />
+
     <br />
 
     <div class="preset-container">
@@ -39,6 +42,7 @@
 
 
     protected List<PresetModel> _presets = new();
+    protected int _dimmerValue = 80;
 
     protected DmxControlInstance _dmxControlInstance = null!;
 
@@ -70,6 +74,15 @@
     }
 
  
+    protected async Task OnSliderChanged()
+    {
+        if (_selectedGroup == null)
+        {
+            return;
+        }
+
+        await _dmxControlInstance.SetProgrammerDimmer(_selectedGroup.Id, _dimmerValue);
+    }
 
 
 
