@@ -1,6 +1,5 @@
 /* CSS for Groups component */
 
-
 .preset-container {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(min(100%, max(200px, (100% - 4 * 16px) / 5)), 1fr));

@@ -354,6 +354,15 @@ namespace DmxControlUtilities.Web.Services
             return PresetModels;
         }
 
+        public async Task ClearProgrammer()
+        {
+            await _programmerClient.DeleteProgrammerValueAsync(new DeleteProgrammerValueRequest()
+            {
+                UserContextId = UserContextId,
+                Mode = DeleteProgrammerValueRequest.Types.EClearMode.Clear
+            }, _connectionClientDataHostMetadata);
+        }
+
         public async Task StartTimecodeShow(string name)
         {
             var ts = TimecodeShows.FirstOrDefault(t => t.Name == name);
