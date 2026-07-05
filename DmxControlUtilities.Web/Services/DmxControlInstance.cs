@@ -1,10 +1,13 @@
 ﻿using DmxControlUtilities.Web.Models;
+using DmxControlUtilities.Web.Options;
 using Grpc.Core;
 using Grpc.Net.Client;
 using log4net;
 using LumosProtobuf;
 using LumosProtobuf.ConnectionClient;
 using LumosProtobuf.Timecode;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using System;
 using System.Collections.Generic;
 using System.Drawing;
@@ -37,46 +40,92 @@ namespace DmxControlUtilities.Web.Services
 
         public List<string> RunningTimecodeShows { get; set; } = new();
 
-        protected TimecodeClientClient _timecodeClientClient;
-        protected ProjectClientClient _projectClientClient;
-        protected ProgrammerClientClient _programmerClient;
-        protected DeviceClientClient _deviceClientClient;
-        protected PresetClientClient _presetClient;
-        protected ParameterClientClient _parameterClient;
-        protected CuelistClientClient _cuelistClient;
+        protected TimecodeClientClient? _timecodeClientClient;
+        protected ProjectClientClient? _projectClientClient;
+        protected ProgrammerClientClient? _programmerClient;
+        protected DeviceClientClient? _deviceClientClient;
+        protected PresetClientClient? _presetClient;
+        protected ParameterClientClient? _parameterClient;
+        protected CuelistClientClient? _cuelistClient;
 
-        protected Metadata _connectionClientDataHostMetadata;
+        protected Metadata? _connectionClientDataHostMetadata;
 
         protected SemaphoreSlim _programmerSemaphore = new(1);
 
-        public DmxControlInstanceService EventManager { get; set; }
+        public DmxControlInstanceService? EventManager { get; set; }
+
+        private readonly IOptions<UmbraConnectionOptions> _options;
+        private readonly ILogger<DmxControlInstance>? _logger;
+        private GrpcChannel? _channel;
 
         public DmxControlInstance(IPEndPoint endpoint)
         {
             IPEndPoint = endpoint;
+            _options = Microsoft.Extensions.Options.Options.Create(new UmbraConnectionOptions());
         }
 
-        public async Task Init()
+        public DmxControlInstance(IPEndPoint endpoint, IOptions<UmbraConnectionOptions> options, ILogger<DmxControlInstance>? logger = null)
+        {
+            IPEndPoint = endpoint;
+            _options = options ?? throw new ArgumentNullException(nameof(options));
+            _logger = logger;
+        }
+
+        /// <summary>
+        /// Initializes the DMX control instance by establishing connection to the Umbra server.
+        /// </summary>
+        /// <param name="cancellationToken">Cancellation token for the initialization operation.</param>
+        public async Task Init(CancellationToken cancellationToken = default)
         {
             if (IsInitialized)
                 return;
 
-            string baseAddress = "http://" + IPEndPoint;
+            try
+            {
+                _channel = CreateGrpcChannel();
+                await ConnectToUmbraServer(_channel, cancellationToken);
+                await AuthenticateUser(_channel, cancellationToken);
+                InitializeGrpcClients(_channel);
+                IsInitialized = true;
 
-            var channel = GrpcChannel.ForAddress(baseAddress);
+                _logger?.LogInformation("Successfully initialized DMX control instance for {IPEndPoint}", IPEndPoint);
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogError(ex, "Failed to initialize DMX control instance for {IPEndPoint}", IPEndPoint);
+                throw;
+            }
+        }
 
-            var client = new UmbraConnectionClient();
-            client.Logger = LogManager.GetLogger("UmbraConnectionClient");
+        /// <summary>
+        /// Creates a gRPC channel to the Umbra server.
+        /// </summary>
+        private GrpcChannel CreateGrpcChannel()
+        {
+            string baseAddress = $"http://{IPEndPoint}";
+            return GrpcChannel.ForAddress(baseAddress);
+        }
 
+        /// <summary>
+        /// Connects to the Umbra server using the UmbraConnectionClient.
+        /// </summary>
+        private async Task ConnectToUmbraServer(GrpcChannel channel, CancellationToken cancellationToken = default)
+        {
+            var client = new UmbraConnectionClient()
+            {
+                Logger = LogManager.GetLogger("UmbraConnectionClient")
+            };
+
+            var options = _options.Value;
             var connectionClientData = new ConnectionClientData()
             {
-                Clientname = "DMXControl Utilities Timecode Syncer",
+                Clientname = options.ClientProgramDescription,
                 ClientProgramInfo = new ClientProgramInfo()
                 {
                     ClientInfo = new ClientInfo()
                     {
-                        Clientname = "DMXControl Utilities Timecode Syncer",
-                        Hostname = "127.0.0.1",
+                        Clientname = options.ClientName,
+                        Hostname = options.ClientHostname,
                         Runtimeid = Guid.NewGuid().ToString(),
                         Type = EClientType.ExternalTool
                     }
@@ -85,179 +134,51 @@ namespace DmxControlUtilities.Web.Services
             };
 
             client.DataProvider = connectionClientData;
-
             var response = await client.connectAsync(false);
 
             SessionId = client.SessionID;
+            _connectionClientDataHostMetadata = new Metadata() { { "SessionID", client.SessionID } };
 
-            connectionClientData.HostMetadata = new Metadata()
-            {
-                { "SessionID", client.SessionID },
-            };
+            client.OpenConnectionsAfterConnect(cancellationToken);
+            _logger?.LogInformation("Connected to Umbra Server at {IPEndPoint}", IPEndPoint);
+        }
 
-            _connectionClientDataHostMetadata = connectionClientData.HostMetadata;
-
-            client.OpenConnectionsAfterConnect(CancellationToken.None);
-
-            Console.WriteLine("Connected to Umbra Server at " + IPEndPoint.ToString());
+        /// <summary>
+        /// Authenticates the user with the Umbra server.
+        /// </summary>
+        private async Task AuthenticateUser(GrpcChannel channel, CancellationToken cancellationToken = default)
+        {
+            if (_connectionClientDataHostMetadata == null)
+                throw new InvalidOperationException("Connection metadata not initialized. Call ConnectToUmbraServer first.");
 
             var userClient = new UserClient.UserClientClient(channel);
+            var options = _options.Value;
 
-            var getUserContextCall = userClient.BindAsync(new LumosProtobuf.User.UserContextRequest()
-            {
-                Username = "Tool",
-                PasswordHash = "123",
-
-            }, _connectionClientDataHostMetadata);
+            var getUserContextCall = userClient.BindAsync(
+                new LumosProtobuf.User.UserContextRequest()
+                {
+                    Username = options.DefaultUsername,
+                    PasswordHash = options.DefaultPasswordHash,
+                },
+                _connectionClientDataHostMetadata,
+                cancellationToken: cancellationToken);
 
             var userContextResponse = await getUserContextCall.ResponseAsync;
-
             UserContextId = userContextResponse.UserContextId;
+        }
 
-            IsInitialized = true;
-
-            var request = new GetMultipleRequest
-            {
-                UserContextId = UserContextId
-            };
-
+        /// <summary>
+        /// Initializes all gRPC client instances.
+        /// </summary>
+        private void InitializeGrpcClients(GrpcChannel channel)
+        {
             _projectClientClient = new ProjectClientClient(channel);
-
-            var state = await _projectClientClient.GetProjectsAsync(request, _connectionClientDataHostMetadata);
-
             _timecodeClientClient = new TimecodeClientClient(channel);
             _programmerClient = new ProgrammerClientClient(channel);
             _deviceClientClient = new DeviceClientClient(channel);
             _presetClient = new PresetClientClient(channel);
             _parameterClient = new ParameterClientClient(channel);
             _cuelistClient = new CuelistClientClient(channel);
-
-            /*
-            _ = Task.Run(async () =>
-            {
-                var receiveCall = _programmerClient.ReceiveProgrammerChanges(new GetRequest
-                {
-                    RequestId = Guid.NewGuid().ToString(),
-                }, _connectionClientDataHostMetadata);
-
-                await foreach (var change in receiveCall.ResponseStream.ReadAllAsync())
-                {
-
-
-
-                }
-            });
-            */
-
-
-            /*
-            _ = Task.Run(async () =>
-            {
-                var receiveCall = _programmerClient.ReceiveProgrammerChanges(new GetRequest
-                {
-                    RequestId = Guid.NewGuid().ToString(),
-                }, _connectionClientDataHostMetadata);
-
-                await foreach (var change in receiveCall.ResponseStream.ReadAllAsync())
-                {
-
-
-                    var channel2 = GrpcChannel.ForAddress(baseAddress);
-
-                    var deviceClient = new DeviceClientClient(channel2);
-
-                    var devices = await deviceClient.GetDevicesAsync(new GetMultipleRequest()
-                    {
-                        RequestId = Guid.NewGuid().ToString(),
-                        UserContextId = UserContextId,
-                    }, _connectionClientDataHostMetadata);
-
-                    var firstDevice = devices.Devices.First();
-
-                    var tempDeviceGroup = await deviceClient.GetTemporaryDeviceGroupAsync(new GetTemporaryDeviceGroupRequest()
-                    {
-                        DeviceAndGroupIDs = { firstDevice.Id },
-                        RequestId = Guid.NewGuid().ToString(),
-                        UserContextId = UserContextId,
-                    }, _connectionClientDataHostMetadata);
-
-                    var request = new GetMultipleRequest()
-                    {
-                        RequestId = Guid.NewGuid().ToString(),
-                        UserContextId = UserContextId,
-                    };
-
-                    request.IdFilter.Add(tempDeviceGroup.Id);
-
-                    var groups = await deviceClient.GetDeviceGroupsAsync(request, _connectionClientDataHostMetadata);
-
-                    var firstProp = groups.DeviceGroups.First().Properties.First();
-
-                    var rest = await deviceClient.GetDevicePropertyCurrentValueAsync(new DevicePropertyValueRequest()
-                    {
-                        DeviceOrGroupId = tempDeviceGroup.Id,
-                        PropertyId = firstProp.Id,
-                        Type = EValueType.CurrentPropertyvalue,
-                        UserContextId = UserContextId
-
-                    }, _connectionClientDataHostMetadata);
-
-
-                    var fannedValue = rest.PropertyValue.Fpv.FannedValues.First();
-
-
-
-
-
-
-                }
-            });
-
-            */
-
-            /*
-            var state = await _programmerClient.GetProgrammerValue(new DevicePropertyValueRequest()
-            {
-
-            })
-            */
-
-            // await UpdateTimecodeshows();
-
-
-
-
-            /*
-            _ = Task.Run(async () =>
-            {
-                var receiveCall = _timecodeClientClient.ReceiveTimecodeStateChanges(new GetRequest
-                {
-                    RequestId = Guid.NewGuid().ToString(),
-                }, _connectionClientDataHostMetadata);
-
-                await foreach (var timecodeState in receiveCall.ResponseStream.ReadAllAsync())
-                {
-                    Console.WriteLine("Received timecode state change:");
-                    Console.WriteLine(timecodeState.ToString());
-
-                    var name = TimecodeShows.FirstOrDefault(t => t.Id == timecodeState.Id)?.Name;
-
-                    if (name != null)
-                    {
-                        if (timecodeState.State == 8 && timecodeState.TimeElapsed == 0)
-                        {
-                            RunningTimecodeShows.Add(name);
-                            EventManager.StartAllTimecodeShow(name);
-                        }
-                        else if (timecodeState.State == 66)
-                        {
-                            RunningTimecodeShows.Clear();
-                            EventManager.StopAllTimecodeShows();
-                        }
-                    }
-                }
-            });
-            */
         }
 
         public async Task UpdateTimecodeshows()

@@ -1,5 +1,6 @@
 using DmxControlUtilities.Web.Background;
 using DmxControlUtilities.Web.Components;
+using DmxControlUtilities.Web.Options;
 using DmxControlUtilities.Web.Services;
 using MComponents;
 
@@ -14,6 +15,10 @@ namespace DmxControlUtilities.Web
             // Add services to the container.
             builder.Services.AddRazorComponents()
                 .AddInteractiveServerComponents();
+
+            // Configure Umbra connection options
+            builder.Services.Configure<UmbraConnectionOptions>(
+                builder.Configuration.GetSection(UmbraConnectionOptions.SectionName));
 
             builder.Services.AddSingleton<DiscoveryService>();
             builder.Services.AddSingleton<DmxControlInstanceService>();
