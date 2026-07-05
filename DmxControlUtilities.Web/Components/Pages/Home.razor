@@ -1,80 +1,111 @@
 ﻿@page "/"
 
-@implements IDisposable
+@using DmxControlUtilities.Web.Models
+@using LumosProtobuf
+@using MComponents.MSelect
 
-@inject DmxControlInstanceService InstanceService
+<PageTitle>Groups</PageTitle>
 
-<PageTitle>Instanzen</PageTitle>
-
-<button @onclick="StopAll">Stop All</button>
-
-
-<input type="text" @bind="_inputAllValue" />
-
-<button @onclick="StartOnAll">Start All</button>
+@inject FixtureService FixtureService
+@inject DmxControlInstanceService DmxControlInstanceService
 
 
 <div>
 
-	@foreach (var instance in InstanceService.Instances)
-	{
-		<DmxControlInstanceView DmxControlInstance="instance" OnClickRemove="() => OnRemove(instance)" />
-	}
+    <span>Gruppe:</span>
+
+    <MSelect @bind-Value="@_selectedGroup" Property="@nameof(DeviceGroupDescriptor.Name)" Options="_groups" />
+
+    <br />
+
+    <Slider @bind-Value="_dimmerValue" @bind-Value:after="OnSliderChanged" />
+
+    <br />
+
+    <div class="preset-container">
+
+        @foreach (var preset in _presets)
+        {
+            <PresetButton Preset="preset" OnClick="OnPresetButtonClicked" />
+        }
+
+    </div>
+
+    <br />
+
+    <button @onclick="RefreshPresets">Refresh Presets</button>
+    <button @onclick="Black">Black</button>
+    <button @onclick="ClearProgrammer">Clear</button>
 
 </div>
 
 @code {
 
-	protected bool isActive = true;
+    protected List<DeviceGroupDescriptor> _groups = new();
+    protected DeviceGroupDescriptor? _selectedGroup;
 
-	protected override void OnInitialized()
-	{
-		base.OnInitialized();
 
-		_ = Task.Run(async () =>
-		{
-			while (isActive)
-			{
-				_ = InvokeAsync(() =>
-					{
-						StateHasChanged();
-					});
+    protected List<PresetModel> _presets = new();
+    protected int _dimmerValue = 80;
 
-				await Task.Delay(1000);
-			}
-		});
-	}
+    protected DmxControlInstance _dmxControlInstance = null!;
 
-	protected string _inputAllValue = string.Empty;
 
-	protected async Task StopAll()
-	{
-		InstanceService.StopAllTimecodeShows();
-	}
+    protected override async Task OnInitializedAsync()
+    {
+        _dmxControlInstance = DmxControlInstanceService.Instances.FirstOrDefault();
 
-	protected void StartOnAll()
-	{
-		InstanceService.StartAllTimecodeShow(_inputAllValue);
-	}
+        if (_dmxControlInstance == null)
+            return;
 
-	protected void OnRemove(DmxControlInstance instance)
-	{
-		InstanceService.RemoveInstance(instance);
-	}
+        _groups = _dmxControlInstance.DeviceGroups;
 
-	public void Dispose()
-	{
-		isActive = false;
-	}
+        _selectedGroup = _groups.FirstOrDefault(g => g.Name.ToLower().StartsWith("main")) ?? _groups.FirstOrDefault();
+
+        _presets = await _dmxControlInstance.GetPresets();
+    }
+
+
+    protected async Task OnPresetButtonClicked(PresetModel preset)
+    {
+        if (_selectedGroup == null)
+        {
+            return;
+        }
+
+        await _dmxControlInstance.SetProgrammerColor(_selectedGroup.Id, preset.Color);
+
+    }
+
+    protected async Task OnSliderChanged()
+    {
+        if (_selectedGroup == null)
+        {
+            return;
+        }
+
+        await _dmxControlInstance.SetProgrammerDimmer(_selectedGroup.Id, _dimmerValue);
+    }
+
+    protected async Task RefreshPresets()
+    {
+        _dmxControlInstance.PresetModels = null;
+        _presets = await _dmxControlInstance.GetPresets();
+    }
+
+    protected async Task Black()
+    {
+        if (_selectedGroup == null)
+        {
+            return;
+        }
+
+        await _dmxControlInstance.SetProgrammerDimmer(_selectedGroup.Id, 0);
+    }
+
+    protected async Task ClearProgrammer()
+    {
+        await _dmxControlInstance.ClearProgrammer();
+    }
 
 }
-
-
-
-
-
-
-
-
-
-

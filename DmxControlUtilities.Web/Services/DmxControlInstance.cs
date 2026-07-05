@@ -448,9 +448,12 @@ namespace DmxControlUtilities.Web.Services
 
         public async Task UpdateFixture(string fixtureId, float yaw, float pitch)
         {
-
-
-
+            var tempDeviceGroup = await _deviceClientClient.GetTemporaryDeviceGroupAsync(new GetTemporaryDeviceGroupRequest()
+            {
+                DeviceAndGroupIDs = { fixtureId },
+                RequestId = Guid.NewGuid().ToString(),
+                UserContextId = UserContextId,
+            }, _connectionClientDataHostMetadata);
 
             var request = new GetMultipleRequest()
             {
@@ -458,15 +461,15 @@ namespace DmxControlUtilities.Web.Services
                 UserContextId = UserContextId,
             };
 
-            request.IdFilter.Add(fixtureId);
-
+            request.IdFilter.Add(tempDeviceGroup.Id);
+                        
             var groups = await _deviceClientClient.GetDeviceGroupsAsync(request, _connectionClientDataHostMetadata);
 
             var firstProp = groups.DeviceGroups.First().Properties.First();
 
             var rest = await _deviceClientClient.GetDevicePropertyCurrentValueAsync(new DevicePropertyValueRequest()
             {
-                DeviceOrGroupId = fixtureId,
+                DeviceOrGroupId = tempDeviceGroup.Id,
                 PropertyId = firstProp.Id,
                 Type = EValueType.CurrentPropertyvalue,
                 UserContextId = UserContextId
@@ -476,15 +479,15 @@ namespace DmxControlUtilities.Web.Services
             var fannedValue = rest.PropertyValue.Fpv.FannedValues.First();
 
             fannedValue.Position.Pan = yaw;
-            fannedValue.Position.Tilt = 90 - MapAngleToMinus90To90(pitch);
+            fannedValue.Position.Tilt = pitch;
 
             var respo = await _programmerClient.SetProgrammerValueAsync(new SetProgrammerValueRequest()
             {
                 UserContextId = UserContextId,
                 PropertyId = firstProp.Id,
 
-                GroupHandling = EGroupHandling.ConcatGroups,
-                GroupId = fixtureId,
+          //      GroupHandling = EGroupHandling.ConcatGroups,
+                GroupId = tempDeviceGroup.Id,
                 Dpv = new DevicePropertyValue()
                 {
                     Position = fannedValue.Position
