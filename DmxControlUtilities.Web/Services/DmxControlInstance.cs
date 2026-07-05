@@ -47,6 +47,8 @@ namespace DmxControlUtilities.Web.Services
 
         protected Metadata _connectionClientDataHostMetadata;
 
+        protected SemaphoreSlim _programmerSemaphore = new(1);
+
         public DmxControlInstanceService EventManager { get; set; }
 
         public DmxControlInstance(IPEndPoint endpoint)
@@ -287,71 +289,83 @@ namespace DmxControlUtilities.Web.Services
             if (PresetModels != null)
                 return PresetModels;
 
-            var request = new GetMultipleRequest
+            try
             {
-                UserContextId = UserContextId
-            };
+                await _programmerSemaphore.WaitAsync();
 
-            var result = await _presetClient.GetPresetsAsync(request, _connectionClientDataHostMetadata);
+                if (PresetModels != null)
+                    return PresetModels;
 
-            var models = new List<PresetModel>();
-
-            await _programmerClient.SetProgrammerOutputAsync(new SetProgrammerOutputRequest()
-            {
-                Mode = EOutputMode.Hidden,
-                UserContextId = UserContextId,
-            }, _connectionClientDataHostMetadata);
-
-            foreach (var preset in result.Presets)
-            {
-                var entry = preset.Entries.FirstOrDefault();
-
-                if (entry == null)
-                    continue;
-
-                var resp = await _presetClient.EditPresetInProgrammerAsync(new EditPresetInProgrammerRequest()
+                var request = new GetMultipleRequest
                 {
-                    Blind = true,
-                    PresetId = preset.PresetId,
-                    RequestId = Guid.NewGuid().ToString(),
+                    UserContextId = UserContextId
+                };
+
+                var result = await _presetClient.GetPresetsAsync(request, _connectionClientDataHostMetadata);
+
+                var models = new List<PresetModel>();
+
+                await _programmerClient.SetProgrammerOutputAsync(new SetProgrammerOutputRequest()
+                {
+                    Mode = EOutputMode.Hidden,
                     UserContextId = UserContextId,
                 }, _connectionClientDataHostMetadata);
 
-                var pState = await _programmerClient.GetProgrammerStateAsync(new CueStateRequest()
+                foreach (var preset in result.Presets)
                 {
-                    UserContextId = UserContextId
+                    var entry = preset.Entries.FirstOrDefault();
+
+                    if (entry == null)
+                        continue;
+
+                    var resp = await _presetClient.EditPresetInProgrammerAsync(new EditPresetInProgrammerRequest()
+                    {
+                        Blind = true,
+                        PresetId = preset.PresetId,
+                        RequestId = Guid.NewGuid().ToString(),
+                        UserContextId = UserContextId,
+                    }, _connectionClientDataHostMetadata);
+
+                    var pState = await _programmerClient.GetProgrammerStateAsync(new CueStateRequest()
+                    {
+                        UserContextId = UserContextId
+                    }, _connectionClientDataHostMetadata);
+
+                    var fannedValue = pState.GroupStates.FirstOrDefault()?.Fpv.FannedValues.FirstOrDefault(f => f.Color != null);
+
+                    if (fannedValue == null)
+                        continue;
+
+                    var color = Color.FromArgb((int)(fannedValue.Color.VisualizationColor.R), (int)(fannedValue.Color.VisualizationColor.G), (int)(fannedValue.Color.VisualizationColor.B));
+
+                    models.Add(new PresetModel()
+                    {
+                        Name = preset.Name,
+                        HtmlColor = ColorTranslator.ToHtml(color),
+                        Color = color
+                    });
+                }
+
+                await _programmerClient.DeleteProgrammerValueAsync(new DeleteProgrammerValueRequest()
+                {
+                    UserContextId = UserContextId,
+                    Mode = DeleteProgrammerValueRequest.Types.EClearMode.Clear
                 }, _connectionClientDataHostMetadata);
 
-                var fannedValue = pState.GroupStates.FirstOrDefault()?.Fpv.FannedValues.FirstOrDefault(f => f.Color != null);
-
-                if (fannedValue == null)
-                    continue;
-
-                var color = Color.FromArgb((int)(fannedValue.Color.VisualizationColor.R), (int)(fannedValue.Color.VisualizationColor.G), (int)(fannedValue.Color.VisualizationColor.B));
-
-                models.Add(new PresetModel()
+                await _programmerClient.SetProgrammerOutputAsync(new SetProgrammerOutputRequest()
                 {
-                    Name = preset.Name,
-                    HtmlColor = ColorTranslator.ToHtml(color),
-                    Color = color
-                });
+                    Mode = EOutputMode.All,
+                    UserContextId = UserContextId,
+                }, _connectionClientDataHostMetadata);
+
+                PresetModels = models;
+
+                return PresetModels;
             }
-
-            await _programmerClient.DeleteProgrammerValueAsync(new DeleteProgrammerValueRequest()
+            finally
             {
-                UserContextId = UserContextId,
-                Mode = DeleteProgrammerValueRequest.Types.EClearMode.Clear
-            }, _connectionClientDataHostMetadata);
-
-            await _programmerClient.SetProgrammerOutputAsync(new SetProgrammerOutputRequest()
-            {
-                Mode = EOutputMode.All,
-                UserContextId = UserContextId,
-            }, _connectionClientDataHostMetadata);
-
-            PresetModels = models;
-
-            return PresetModels;
+                _programmerSemaphore.Release();
+            }
         }
 
         public async Task ClearProgrammer()
@@ -462,7 +476,7 @@ namespace DmxControlUtilities.Web.Services
             };
 
             request.IdFilter.Add(tempDeviceGroup.Id);
-                        
+
             var groups = await _deviceClientClient.GetDeviceGroupsAsync(request, _connectionClientDataHostMetadata);
 
             var firstProp = groups.DeviceGroups.First().Properties.First();
@@ -486,7 +500,7 @@ namespace DmxControlUtilities.Web.Services
                 UserContextId = UserContextId,
                 PropertyId = firstProp.Id,
 
-          //      GroupHandling = EGroupHandling.ConcatGroups,
+                //      GroupHandling = EGroupHandling.ConcatGroups,
                 GroupId = tempDeviceGroup.Id,
                 Dpv = new DevicePropertyValue()
                 {
