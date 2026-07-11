@@ -4,9 +4,9 @@
            min="0"
            max="100"
            step="1"
-           value="@Value"
-           style="flex-grow: 1"
-           @oninput="OnInputChanged" />
+           @bind="@Value"
+           @oninput="OnValueChanged"
+           style="flex-grow: 1" />
 
 </div>
 
@@ -17,11 +17,10 @@
     [Parameter]
     public EventCallback<int> ValueChanged { get; set; }
 
-    private async Task OnInputChanged(ChangeEventArgs e)
+    private async Task OnValueChanged(ChangeEventArgs e)
     {
         if (int.TryParse(e.Value?.ToString(), out var value))
         {
-            Value = value;
             await ValueChanged.InvokeAsync(value);
         }
     }

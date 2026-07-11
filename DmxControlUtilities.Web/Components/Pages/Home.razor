@@ -4,10 +4,13 @@
 @using LumosProtobuf
 @using MComponents.MSelect
 
+@implements IDisposable
+
 <PageTitle>Groups</PageTitle>
 
 @inject FixtureService FixtureService
 @inject DmxControlInstanceService DmxControlInstanceService
+@inject AudioVolumeService AudioVolumeService
 
 
 <div>
@@ -18,7 +21,7 @@
 
     <br />
 
-    <Slider @bind-Value="_dimmerValue" @bind-Value:after="OnSliderChanged" />
+    <Slider @bind-Value="_dimmerValue" @bind-Value:after="OnDimmerSliderChanged" />
 
     <br />
 
@@ -37,6 +40,12 @@
     <button @onclick="Black">Black</button>
     <button @onclick="ClearProgrammer">Clear</button>
 
+    <br />
+    <br />
+    <span>Volume:</span>
+    <Slider @bind-Value="_volumeValue" @bind-Value:after="OnVolumeSliderChanged" />
+
+
 </div>
 
 @code {
@@ -47,8 +56,14 @@
 
     protected List<PresetModel> _presets = new();
     protected int _dimmerValue = 80;
+    protected int _volumeValue = 50;
 
     protected DmxControlInstance _dmxControlInstance = null!;
+
+    public void Dispose()
+    {
+        AudioVolumeService.VolumeChanged -= OnAudioVolumeChanged;
+    }
 
 
     protected override async Task OnInitializedAsync()
@@ -63,8 +78,19 @@
         _selectedGroup = _groups.FirstOrDefault(g => g.Name.ToLower().StartsWith("main")) ?? _groups.FirstOrDefault();
 
         _presets = await _dmxControlInstance.GetPresets();
+
+        // Register volume changed event
+        AudioVolumeService.VolumeChanged += OnAudioVolumeChanged;
+
+        // Initialize volume value from current device volume
+        _volumeValue = (int)(AudioVolumeService.CurrentVolume * 100);
     }
 
+    protected void OnAudioVolumeChanged(object? sender, VolumeChangedEventArgs e)
+    {
+        _volumeValue = (int)(e.Volume * 100);
+        _ = InvokeAsync(StateHasChanged);
+    }
 
     protected async Task OnPresetButtonClicked(PresetModel preset)
     {
@@ -77,7 +103,7 @@
 
     }
 
-    protected async Task OnSliderChanged()
+    protected async Task OnDimmerSliderChanged()
     {
         if (_selectedGroup == null)
         {
@@ -85,6 +111,11 @@
         }
 
         await _dmxControlInstance.SetProgrammerDimmer(_selectedGroup.Id, _dimmerValue);
+    }
+
+    protected async Task OnVolumeSliderChanged()
+    {
+        AudioVolumeService.SetPrimaryDeviceVolume(_volumeValue / 100f);
     }
 
     protected async Task RefreshPresets()

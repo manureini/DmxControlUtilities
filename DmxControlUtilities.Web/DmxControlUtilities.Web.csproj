@@ -9,6 +9,7 @@
 
   <ItemGroup>
     <PackageReference Include="Grpc.Net.Client" Version="2.76.0" />
+    <PackageReference Include="NAudio" Version="2.3.0" />
   </ItemGroup>
 
   <ItemGroup>
