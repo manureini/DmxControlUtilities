@@ -147,7 +147,7 @@ namespace DmxControlUtilities.Lib.Services
             }
 
             ret.Presets = GetPresets(container);
-
+            ret.DeviceGroup = GetDeviceGroups(container);
             return ret;
         }
 
@@ -187,6 +187,40 @@ namespace DmxControlUtilities.Lib.Services
             return presets;
         }
 
+        public List<DeviceGroup> GetDeviceGroups(DmzContainer container)
+        {
+            var deviceGroups = new List<DeviceGroup>();
+
+            var files = container.Files
+             .Where(f => f.FileName.StartsWith("Config/DeviceGroups", StringComparison.OrdinalIgnoreCase))
+             .ToList();
+
+            foreach (var file in files)
+            {
+                var xml = LoadXDocument(file);
+                if (xml is null) continue;
+
+                var presetElements = xml.Descendants("TreeItem")
+                    .Where(e => string.Equals((string?)e.Attribute("Name"), "DeviceGroup", StringComparison.OrdinalIgnoreCase));
+
+                foreach (var element in presetElements)
+                {
+                    var id = GetAttributeValue(element, "ID");
+
+                    if (Guid.TryParse(id, out var parsedId))
+                    {
+                        deviceGroups.Add(new DeviceGroup
+                        {
+                            Id = parsedId,
+                            Xml = element.ToString()
+                        });
+                    }
+                }
+            }
+
+            return deviceGroups;
+        }
+
         public DmzContainer AddTimeshow(DmzContainer container, Timeshow timeshow)
         {
             if (container is null) throw new ArgumentNullException(nameof(container));
@@ -211,6 +245,7 @@ namespace DmxControlUtilities.Lib.Services
             UpdateTimecodeShows(container, timeshow);
             UpdateResourceMetadata(container, timeshow);
             UpdatePresets(container, timeshow);
+            UpdateDeviceGroups(container, timeshow);
 
             if (timeshow.Files?.Any() == true)
             {
@@ -525,6 +560,68 @@ namespace DmxControlUtilities.Lib.Services
             ms.Seek(0, SeekOrigin.Begin);
             lastfile.FileStream = ms;
         }
+
+
+        private static void UpdateDeviceGroups(DmzContainer container, Timeshow timeshow)
+        {
+            var deviceListFiles = container.Files
+                .Where(f => f.FileName.StartsWith("Config/DeviceGroups", StringComparison.OrdinalIgnoreCase) && f.FileName.EndsWith(".xml", StringComparison.OrdinalIgnoreCase))
+                .OrderByDescending(s => s.FileName)
+                .ToList();
+
+            if (!deviceListFiles.Any()) return;
+
+            var deviceIds = new List<string>();
+
+            foreach (var file in deviceListFiles)
+            {
+                var deviceListsXml = LoadXDocument(file);
+                if (deviceListsXml is null) continue;
+
+                var devicesElement = deviceListsXml.Descendants("TreeItem")
+                    .FirstOrDefault(ti => string.Equals((string?)ti.Attribute("Name"), "DeviceGroups", StringComparison.OrdinalIgnoreCase));
+
+                if (devicesElement is null) continue;
+
+                var fsceneIds = devicesElement.Elements("TreeItem")
+                    .Where(ti => string.Equals((string?)ti.Attribute("Name"), "DeviceGroup", StringComparison.OrdinalIgnoreCase))
+                    .Select(ti => (string?)ti.Elements("Attribute").FirstOrDefault(a => string.Equals((string?)a.Attribute("Name"), "ID", StringComparison.OrdinalIgnoreCase))?.Attribute("Value"))
+                    .Where(id => !string.IsNullOrEmpty(id))
+                    .ToList();
+
+                deviceIds.AddRange(fsceneIds);
+            }
+
+            var lastfile = deviceListFiles.Last();
+            var lastsceneListsXml = LoadXDocument(lastfile) ?? throw new InvalidOperationException("Failed to load last Presets file.");
+
+            var lastsceneListsElement = lastsceneListsXml.Descendants("TreeItem")
+                .FirstOrDefault(ti => string.Equals((string?)ti.Attribute("Name"), "DeviceGroups", StringComparison.OrdinalIgnoreCase))
+                ?? throw new InvalidOperationException("DeviceGroups element not found in last DeviceGroups file.");
+
+            foreach (var preset in timeshow.DeviceGroup ?? Enumerable.Empty<DeviceGroup>())
+            {
+                if (deviceIds.Contains(preset.Id.ToString(), StringComparer.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                var newPresetElement = XElement.Parse(preset.Xml);
+                var indexAttr = newPresetElement.Elements("Attribute").FirstOrDefault(x => string.Equals((string?)x.Attribute("Name"), "ZZ_SAVE_INDEX", StringComparison.OrdinalIgnoreCase));
+                indexAttr?.SetAttributeValue("Value", deviceIds.Count);
+
+                //todo update group number
+
+                lastsceneListsElement.Add(newPresetElement);
+                deviceIds.Add(preset.Id.ToString());
+            }
+
+            var ms = new MemoryStream();
+            lastsceneListsXml.Save(ms);
+            ms.Seek(0, SeekOrigin.Begin);
+            lastfile.FileStream = ms;
+        }
+
 
         private static XElement GetResourcesElement(string pName, bool value)
         {

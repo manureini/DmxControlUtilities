@@ -17,5 +17,7 @@
         public List<SceneList> SceneLists { get; set; } = new List<SceneList>();
 
         public List<Preset> Presets { get; set; } = new List<Preset>();
+
+        public List<DeviceGroup> DeviceGroup { get; set; } = new List<DeviceGroup>();
     }
 }
