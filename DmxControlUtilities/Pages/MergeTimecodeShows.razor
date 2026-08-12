@@ -122,7 +122,7 @@
 
             var containerDest = DmzFileService.ReadDmzFile(destFile.Stream, destFile.FileName);
 
-            var ts = TimeshowService.ExtractTimeshow(mSourceContainer, mSelectedTimeshow);
+            var ts = TimeshowService.ExtractTimeshow(mSourceContainer, mSelectedTimeshow.Id);
 
             var destContainer = TimeshowService.AddTimeshow(containerDest, ts);
 
