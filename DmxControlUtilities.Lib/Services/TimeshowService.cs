@@ -8,6 +8,40 @@ namespace DmxControlUtilities.Lib.Services
     {
         protected readonly SzeneListService _szeneListService;
 
+        // XML Element Names
+        private const string XmlElementTreeItem = "TreeItem";
+        private const string XmlElementAttribute = "Attribute";
+        private const string XmlAttributeName = "Name";
+        private const string XmlAttributeId = "ID";
+        private const string XmlAttributeValue = "Value";
+
+        // XML Element Names - Specific
+        private const string XmlElementTimecodeShow = "TimecodeShow";
+        private const string XmlElementNode = "Node";
+        private const string XmlElementSoundFile = "SoundFile";
+        private const string XmlElementScenelistIds = "ScenelistIDs";
+        private const string XmlElementScenelist = "Scenelist";
+        private const string XmlElementPreset = "Preset";
+        private const string XmlElementPresets = "Presets";
+        private const string XmlElementDeviceGroup = "DeviceGroup";
+        private const string XmlElementDeviceGroups = "DeviceGroups";
+        private const string XmlElementColorlist = "Colorlist";
+        private const string XmlElementItemLists = "ItemLists";
+        private const string XmlElementResources = "Resources";
+        private const string XmlElementTimecodeShows = "TimecodeShows";
+        private const string XmlElementSceneLists = "SceneLists";
+
+        // XML File Paths
+        private const string ConfigPathTimecodeShows = "Config/TimecodeShows";
+        private const string ConfigPathTimecodeShowsXml = "Config/TimecodeShows.xml";
+        private const string ConfigPathProjectExplorer = "Config/ProjectExplorer.xml";
+        private const string ConfigPathPresets = "Config/Presets";
+        private const string ConfigPathDeviceGroups = "Config/DeviceGroups";
+        private const string ConfigPathItemList = "Config/ItemList";
+        private const string ConfigPathProjectResourceMetadata = "Config/ProjectResourceMetadata.xml";
+        private const string ConfigPathSceneLists = "Config/SceneLists";
+        private const string ConfigPath = "Config/";
+
         public TimeshowService(SzeneListService szeneListService)
         {
             _szeneListService = szeneListService ?? throw new ArgumentNullException(nameof(szeneListService));
@@ -18,8 +52,8 @@ namespace DmxControlUtilities.Lib.Services
             if (container is null) throw new ArgumentNullException(nameof(container));
 
             var files = container.Files
-                .Where(f => f.FileName.StartsWith("Config/TimecodeShows", StringComparison.OrdinalIgnoreCase)
-                            && !f.FileName.Contains("/TimecodeShows/", StringComparison.OrdinalIgnoreCase))
+                .Where(f => f.FileName.StartsWith(ConfigPathTimecodeShows, StringComparison.OrdinalIgnoreCase)
+                            && !f.FileName.Contains($"/{ConfigPathTimecodeShows.Substring(7)}/", StringComparison.OrdinalIgnoreCase))
                 .ToList();
 
             var timeshows = new List<TimeshowMeta>();
@@ -29,14 +63,14 @@ namespace DmxControlUtilities.Lib.Services
                 var xml = LoadXDocument(file);
                 if (xml is null) continue;
 
-                var timecodeShowElements = xml.Descendants("TreeItem")
-                    .Where(e => string.Equals((string?)e.Attribute("Name"), "TimecodeShow", StringComparison.OrdinalIgnoreCase))
+                var timecodeShowElements = xml.Descendants(XmlElementTreeItem)
+                    .Where(e => string.Equals((string?)e.Attribute(XmlAttributeName), XmlElementTimecodeShow, StringComparison.OrdinalIgnoreCase))
                     .ToList();
 
                 foreach (var element in timecodeShowElements)
                 {
-                    var name = GetAttributeValue(element, "Name");
-                    var id = GetAttributeValue(element, "ID");
+                    var name = GetAttributeValue(element, XmlAttributeName);
+                    var id = GetAttributeValue(element, XmlAttributeId);
                     var number = GetAttributeValue(element, "Number");
 
                     if (Guid.TryParse(id, out var parsedId) && !string.IsNullOrWhiteSpace(name))
@@ -60,30 +94,21 @@ namespace DmxControlUtilities.Lib.Services
             if (timeshowMeta is null) throw new ArgumentNullException(nameof(timeshowMeta));
 
             var timecodeXmlFile = container.Files
-                .FirstOrDefault(f => f.FileName.Contains("Config/TimecodeShows/", StringComparison.OrdinalIgnoreCase) &&
+                .FirstOrDefault(f => f.FileName.Contains($"{ConfigPathTimecodeShows}/", StringComparison.OrdinalIgnoreCase) &&
                                      f.FileName.Contains(timeshowMeta.Id.ToString(), StringComparison.OrdinalIgnoreCase))
                 ?? throw new InvalidOperationException($"Timecode show file for ID {timeshowMeta.Id} not found.");
 
             var xmlContent = GetXmlString(timecodeXmlFile);
 
             var projectExplorerFile = container.Files
-                .FirstOrDefault(f => f.FileName.Contains("Config/ProjectExplorer.xml", StringComparison.OrdinalIgnoreCase))
+                .FirstOrDefault(f => f.FileName.Contains(ConfigPathProjectExplorer, StringComparison.OrdinalIgnoreCase))
                 ?? throw new InvalidOperationException("ProjectExplorer.xml not found in container.");
 
             var projectExplorerXml = LoadXDocument(projectExplorerFile)
                 ?? throw new InvalidOperationException("Failed to load ProjectExplorer.xml.");
 
-            var xmlElem = projectExplorerXml.Descendants("TreeItem")
-                .Where(ti => string.Equals((string?)ti.Attribute("Name"), "Node", StringComparison.OrdinalIgnoreCase))
-                .FirstOrDefault(ti => ti.Elements("Attribute")
-                    .Any(attr =>
-                        string.Equals((string?)attr.Attribute("Name"), "ID", StringComparison.OrdinalIgnoreCase) &&
-                        string.Equals((string?)attr.Attribute("Value"), timeshowMeta.Id.ToString(), StringComparison.OrdinalIgnoreCase)));
-
-            if (xmlElem is null)
-            {
-                throw new InvalidOperationException($"ProjectExplorer entry for timeshow ID {timeshowMeta.Id} not found.");
-            }
+            var xmlElem = FindNodeByIdAttribute(projectExplorerXml, timeshowMeta.Id.ToString())
+                ?? throw new InvalidOperationException($"ProjectExplorer entry for timeshow ID {timeshowMeta.Id} not found.");
 
             var projectExplorerXmlContent = xmlElem.ToString();
 
@@ -101,50 +126,12 @@ namespace DmxControlUtilities.Lib.Services
                 ?? throw new InvalidOperationException("Failed to load timeshow XML.");
 
             // collect sound files
-            var soundFiles = timecodeXml.Descendants("TreeItem")
-                .Where(x => string.Equals((string?)x.Attribute("Name"), "SoundFile", StringComparison.OrdinalIgnoreCase))
-                .Select(x => GetAttributeValue(x, "SoundFileName"))
-                .Where(fn => !string.IsNullOrWhiteSpace(fn))
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .ToList();
-
-            foreach (var fileName in soundFiles)
-            {
-                // try to find matching file in container
-                var soundFile = container.Files.FirstOrDefault(f =>
-                    f.FileName.Contains($"Config/{fileName}", StringComparison.OrdinalIgnoreCase) ||
-                    f.FileName.EndsWith(fileName, StringComparison.OrdinalIgnoreCase));
-
-                if (soundFile != null)
-                {
-                    ret.Files.Add(soundFile);
-                }
-            }
+            CollectSoundFiles(container, timecodeXml, ret);
 
             var allSceneLists = _szeneListService.GetSceneLists(container) ?? new List<SceneList>();
 
-            var sceneListIdSections = timecodeXml.Descendants("TreeItem")
-                .Where(x => string.Equals((string?)x.Attribute("Name"), "ScenelistIDs", StringComparison.OrdinalIgnoreCase))
-                .ToList();
-
-            foreach (var section in sceneListIdSections)
-            {
-                var scenelists = section.Descendants("TreeItem")
-                    .Where(x => string.Equals((string?)x.Attribute("Name"), "Scenelist", StringComparison.OrdinalIgnoreCase));
-
-                foreach (var scenelist in scenelists)
-                {
-                    var sceneListIdValue = GetAttributeValue(scenelist, "SceneListID");
-                    if (Guid.TryParse(sceneListIdValue, out var parsedId))
-                    {
-                        var sceneList = allSceneLists.FirstOrDefault(s => s.Id == parsedId);
-                        if (sceneList != null && !ret.SceneLists.Any(s => s.Id == sceneList.Id))
-                        {
-                            ret.SceneLists.Add(sceneList);
-                        }
-                    }
-                }
-            }
+            // Populate scene lists for this timeshow
+            PopulateSceneLists(timecodeXml, allSceneLists, ret);
 
             ret.Presets = GetPresets(container);
             ret.DeviceGroup = GetDeviceGroups(container);
@@ -158,8 +145,8 @@ namespace DmxControlUtilities.Lib.Services
             if (container is null) throw new ArgumentNullException(nameof(container));
 
             var files = container.Files
-                .Where(f => f.FileName.StartsWith("Config/Presets", StringComparison.OrdinalIgnoreCase)
-                            && !f.FileName.Contains("/Presets/", StringComparison.OrdinalIgnoreCase))
+                .Where(f => f.FileName.StartsWith(ConfigPathPresets, StringComparison.OrdinalIgnoreCase)
+                            && !f.FileName.Contains($"/{ConfigPathPresets.Substring(7)}/", StringComparison.OrdinalIgnoreCase))
                 .ToList();
 
             var presets = new List<Preset>();
@@ -169,12 +156,12 @@ namespace DmxControlUtilities.Lib.Services
                 var xml = LoadXDocument(file);
                 if (xml is null) continue;
 
-                var presetElements = xml.Descendants("TreeItem")
-                    .Where(e => string.Equals((string?)e.Attribute("Name"), "Preset", StringComparison.OrdinalIgnoreCase));
+                var presetElements = xml.Descendants(XmlElementTreeItem)
+                    .Where(e => string.Equals((string?)e.Attribute(XmlAttributeName), XmlElementPreset, StringComparison.OrdinalIgnoreCase));
 
                 foreach (var element in presetElements)
                 {
-                    var id = GetAttributeValue(element, "ID");
+                    var id = GetAttributeValue(element, XmlAttributeId);
                     if (Guid.TryParse(id, out var parsedId))
                     {
                         presets.Add(new Preset
@@ -194,7 +181,7 @@ namespace DmxControlUtilities.Lib.Services
             var deviceGroups = new List<DeviceGroup>();
 
             var files = container.Files
-             .Where(f => f.FileName.StartsWith("Config/DeviceGroups", StringComparison.OrdinalIgnoreCase))
+             .Where(f => f.FileName.StartsWith(ConfigPathDeviceGroups, StringComparison.OrdinalIgnoreCase))
              .ToList();
 
             foreach (var file in files)
@@ -202,12 +189,12 @@ namespace DmxControlUtilities.Lib.Services
                 var xml = LoadXDocument(file);
                 if (xml is null) continue;
 
-                var presetElements = xml.Descendants("TreeItem")
-                    .Where(e => string.Equals((string?)e.Attribute("Name"), "DeviceGroup", StringComparison.OrdinalIgnoreCase));
+                var presetElements = xml.Descendants(XmlElementTreeItem)
+                    .Where(e => string.Equals((string?)e.Attribute(XmlAttributeName), XmlElementDeviceGroup, StringComparison.OrdinalIgnoreCase));
 
                 foreach (var element in presetElements)
                 {
-                    var id = GetAttributeValue(element, "ID");
+                    var id = GetAttributeValue(element, XmlAttributeId);
 
                     if (Guid.TryParse(id, out var parsedId))
                     {
@@ -228,7 +215,7 @@ namespace DmxControlUtilities.Lib.Services
             var itemLists = new List<ItemListEntry>();
 
             var files = container.Files
-             .Where(f => f.FileName.StartsWith("Config/ItemList", StringComparison.OrdinalIgnoreCase))
+             .Where(f => f.FileName.StartsWith(ConfigPathItemList, StringComparison.OrdinalIgnoreCase))
              .ToList();
 
             foreach (var file in files)
@@ -236,12 +223,12 @@ namespace DmxControlUtilities.Lib.Services
                 var xml = LoadXDocument(file);
                 if (xml is null) continue;
 
-                var presetElements = xml.Descendants("TreeItem")
-                    .Where(e => string.Equals((string?)e.Attribute("Name"), "Colorlist", StringComparison.OrdinalIgnoreCase));
+                var presetElements = xml.Descendants(XmlElementTreeItem)
+                    .Where(e => string.Equals((string?)e.Attribute(XmlAttributeName), XmlElementColorlist, StringComparison.OrdinalIgnoreCase));
 
                 foreach (var element in presetElements)
                 {
-                    var id = GetAttributeValue(element, "ID");
+                    var id = GetAttributeValue(element, XmlAttributeId);
 
                     if (Guid.TryParse(id, out var parsedId))
                     {
@@ -262,7 +249,7 @@ namespace DmxControlUtilities.Lib.Services
             if (container is null) throw new ArgumentNullException(nameof(container));
             if (timeshow is null) throw new ArgumentNullException(nameof(timeshow));
 
-            if (container.Files.Any(f => f.FileName.Contains("Config/TimecodeShows/", StringComparison.OrdinalIgnoreCase)
+            if (container.Files.Any(f => f.FileName.Contains($"{ConfigPathTimecodeShows}/", StringComparison.OrdinalIgnoreCase)
                                         && f.FileName.Contains(timeshow.Id.ToString(), StringComparison.OrdinalIgnoreCase)))
             {
                 throw new InvalidOperationException("A timeshow with the same ID already exists.");
@@ -292,76 +279,152 @@ namespace DmxControlUtilities.Lib.Services
             return container;
         }
 
-        private static void UpdateResourceMetadata(DmzContainer container, Timeshow timeshow)
-        {
-            var projectExplorerFile = container.Files.FirstOrDefault(f => f.FileName.Contains("Config/ProjectResourceMetadata.xml", StringComparison.OrdinalIgnoreCase))
-                ?? throw new InvalidOperationException("ProjectResourceMetadata.xml not found.");
+            /// <summary>
+            /// Configuration for updating configuration collection elements (Presets, DeviceGroups, ItemLists)
+            /// </summary>
+            private sealed record UpdateConfiguration(
+                string filePathPrefix,
+                string parentElementName,
+                string childElementName,
+                string errorMessageSuffix
+            );
 
-            var resourceMetadataXml = LoadXDocument(projectExplorerFile) ?? throw new InvalidOperationException("Failed to load ProjectResourceMetadata.xml.");
-
-            var projectResourcesElement = resourceMetadataXml.Descendants("TreeItem").FirstOrDefault(ti => string.Equals((string?)ti.Attribute("Name"), "Resources", StringComparison.OrdinalIgnoreCase))
-                ?? throw new InvalidOperationException("Resources element not found in ProjectResourceMetadata.xml.");
-
-            var newTreeItem = GetResourcesElement(timeshow.XmlFileName.Replace("Config/", string.Empty), false);
-            projectResourcesElement.Add(newTreeItem);
-
-            foreach (var file in timeshow.Files ?? Enumerable.Empty<DmzFile>())
+            /// <summary>
+            /// Generic method to update configuration collection elements with deduplication logic
+            /// </summary>
+            private static void UpdateConfigurationElements<T>(
+                DmzContainer container,
+                IEnumerable<T> items,
+                Func<T, Guid> idSelector,
+                Func<T, string> xmlSelector,
+                UpdateConfiguration config,
+                Action<XElement, int>? additionalAction = null
+            )
             {
-                var filename = file.FileName.Replace("Config/", string.Empty).Replace("/", "\\");
-                var existing = projectResourcesElement.Descendants("TreeItem").FirstOrDefault(t => string.Equals(t.Attribute("Name")?.Value, filename, StringComparison.OrdinalIgnoreCase));
-                existing?.Remove();
+                var configFiles = container.Files
+                    .Where(f => f.FileName.StartsWith(config.filePathPrefix, StringComparison.OrdinalIgnoreCase) && f.FileName.EndsWith(".xml", StringComparison.OrdinalIgnoreCase))
+                    .OrderByDescending(s => s.FileName)
+                    .ToList();
 
-                var resourceElement = GetResourcesElement(file.FileName, true);
-                projectResourcesElement.Add(resourceElement);
+                if (!configFiles.Any()) return;
+
+                var existingIds = new List<string>();
+
+                // Collect all existing IDs from all config files
+                foreach (var file in configFiles)
+                {
+                    var xml = LoadXDocument(file);
+                    if (xml is null) continue;
+
+                    var parentElement = xml.Descendants(XmlElementTreeItem)
+                        .FirstOrDefault(ti => string.Equals((string?)ti.Attribute(XmlAttributeName), config.parentElementName, StringComparison.OrdinalIgnoreCase));
+
+                    if (parentElement is null) continue;
+
+                    var ids = ExtractIdsFromXmlElements(parentElement, config.childElementName);
+                    existingIds.AddRange(ids);
+                }
+
+                var lastfile = configFiles.Last();
+                var lastXml = LoadXDocument(lastfile) ?? throw new InvalidOperationException($"Failed to load last {config.errorMessageSuffix} file.");
+
+                var parentEl = lastXml.Descendants(XmlElementTreeItem)
+                    .FirstOrDefault(ti => string.Equals((string?)ti.Attribute(XmlAttributeName), config.parentElementName, StringComparison.OrdinalIgnoreCase))
+                    ?? throw new InvalidOperationException($"{config.parentElementName} element not found in last {config.errorMessageSuffix} file.");
+
+                int index = 0;
+                foreach (var item in items)
+                {
+                    var idString = idSelector(item).ToString();
+                    if (existingIds.Contains(idString, StringComparer.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+
+                    var newElement = XElement.Parse(xmlSelector(item));
+                    var indexAttr = newElement.Elements(XmlElementAttribute).FirstOrDefault(x => string.Equals((string?)x.Attribute(XmlAttributeName), "ZZ_SAVE_INDEX", StringComparison.OrdinalIgnoreCase));
+                    indexAttr?.SetAttributeValue(XmlAttributeValue, existingIds.Count + index);
+
+                    additionalAction?.Invoke(newElement, existingIds.Count + index);
+
+                    parentEl.Add(newElement);
+                    existingIds.Add(idString);
+                    index++;
+                }
+
+                SaveXmlToFileStream(lastXml, lastfile);
             }
+
+            private static void UpdateResourceMetadata(DmzContainer container, Timeshow timeshow)
+            {
+                var projectExplorerFile = container.Files.FirstOrDefault(f => f.FileName.Contains(ConfigPathProjectResourceMetadata, StringComparison.OrdinalIgnoreCase))
+                    ?? throw new InvalidOperationException("ProjectResourceMetadata.xml not found.");
+
+                var resourceMetadataXml = LoadXDocument(projectExplorerFile) ?? throw new InvalidOperationException("Failed to load ProjectResourceMetadata.xml.");
+
+                var projectResourcesElement = resourceMetadataXml.Descendants(XmlElementTreeItem).FirstOrDefault(ti => string.Equals((string?)ti.Attribute(XmlAttributeName), XmlElementResources, StringComparison.OrdinalIgnoreCase))
+                    ?? throw new InvalidOperationException("Resources element not found in ProjectResourceMetadata.xml.");
+
+                var newTreeItem = GetResourcesElement(timeshow.XmlFileName.Replace(ConfigPath, string.Empty), false);
+                projectResourcesElement.Add(newTreeItem);
+
+                foreach (var file in timeshow.Files ?? Enumerable.Empty<DmzFile>())
+                {
+                    var filename = file.FileName.Replace(ConfigPath, string.Empty).Replace("/", "\\");
+                    var existing = projectResourcesElement.Descendants(XmlElementTreeItem).FirstOrDefault(t => string.Equals(t.Attribute(XmlAttributeName)?.Value, filename, StringComparison.OrdinalIgnoreCase));
+                    existing?.Remove();
+
+                    var resourceElement = GetResourcesElement(file.FileName, true);
+                    projectResourcesElement.Add(resourceElement);
+                }
 
             SaveXmlToFileStream(resourceMetadataXml, projectExplorerFile);
         }
 
         private static void UpdateTimecodeShows(DmzContainer container, Timeshow timeshow)
         {
-            var timecodeShowsFile = container.Files.FirstOrDefault(f => f.FileName.Contains("Config/TimecodeShows.xml", StringComparison.OrdinalIgnoreCase))
+            var timecodeShowsFile = container.Files.FirstOrDefault(f => f.FileName.Contains(ConfigPathTimecodeShowsXml, StringComparison.OrdinalIgnoreCase))
                 ?? throw new InvalidOperationException("TimecodeShows.xml not found.");
 
             var timecodeShowsXml = LoadXDocument(timecodeShowsFile) ?? throw new InvalidOperationException("Failed to load TimecodeShows.xml.");
 
-            int count = timecodeShowsXml.Descendants("TreeItem").Count(e => string.Equals((string?)e.Attribute("Name"), "TimecodeShow", StringComparison.OrdinalIgnoreCase));
+            int count = timecodeShowsXml.Descendants(XmlElementTreeItem).Count(e => string.Equals((string?)e.Attribute(XmlAttributeName), XmlElementTimecodeShow, StringComparison.OrdinalIgnoreCase));
 
-            var timecodeShowsElement = timecodeShowsXml.Descendants("TreeItem")
-                .FirstOrDefault(ti => string.Equals((string?)ti.Attribute("Name"), "TimecodeShows", StringComparison.OrdinalIgnoreCase))
+            var timecodeShowsElement = timecodeShowsXml.Descendants(XmlElementTreeItem)
+                .FirstOrDefault(ti => string.Equals((string?)ti.Attribute(XmlAttributeName), XmlElementTimecodeShows, StringComparison.OrdinalIgnoreCase))
                 ?? throw new InvalidOperationException("TimecodeShows element not found.");
 
-            var timecodeShowElement = new XElement("TreeItem",
-                new XAttribute("Name", "TimecodeShow"),
-                new XElement("Attribute",
-                    new XAttribute("Name", "Name"),
+            var timecodeShowElement = new XElement(XmlElementTreeItem,
+                new XAttribute(XmlAttributeName, XmlElementTimecodeShow),
+                new XElement(XmlElementAttribute,
+                    new XAttribute(XmlAttributeName, XmlAttributeName),
                     new XAttribute("Type", "Primitive"),
                     new XAttribute("ValueType", "String"),
-                    new XAttribute("Value", timeshow.Name)
+                    new XAttribute(XmlAttributeValue, timeshow.Name)
                 ),
-                new XElement("Attribute",
-                    new XAttribute("Name", "ID"),
+                new XElement(XmlElementAttribute,
+                    new XAttribute(XmlAttributeName, XmlAttributeId),
                     new XAttribute("Type", "Primitive"),
                     new XAttribute("ValueType", "String"),
-                    new XAttribute("Value", timeshow.Id)
+                    new XAttribute(XmlAttributeValue, timeshow.Id)
                 ),
-                new XElement("Attribute",
-                    new XAttribute("Name", "Number"),
+                new XElement(XmlElementAttribute,
+                    new XAttribute(XmlAttributeName, "Number"),
                     new XAttribute("Type", "Primitive"),
                     new XAttribute("ValueType", "UInt32"),
-                    new XAttribute("Value", count + 1)
+                    new XAttribute(XmlAttributeValue, count + 1)
                 ),
-                new XElement("Attribute",
-                    new XAttribute("Name", "File"),
+                new XElement(XmlElementAttribute,
+                    new XAttribute(XmlAttributeName, "File"),
                     new XAttribute("Type", "Primitive"),
                     new XAttribute("ValueType", "String"),
-                    new XAttribute("Value", timeshow.XmlFileName.Replace("Config/", string.Empty).Replace("/", "\\"))
+                    new XAttribute(XmlAttributeValue, timeshow.XmlFileName.Replace(ConfigPath, string.Empty).Replace("/", "\\"))
                 ),
-                new XElement("Attribute",
-                    new XAttribute("Name", "ZZ_SAVE_INDEX"),
+                new XElement(XmlElementAttribute,
+                    new XAttribute(XmlAttributeName, "ZZ_SAVE_INDEX"),
                     new XAttribute("Type", "Primitive"),
                     new XAttribute("ValueType", "Int32"),
-                    new XAttribute("Value", count)
+                    new XAttribute(XmlAttributeValue, count)
                 )
             );
 
@@ -373,7 +436,7 @@ namespace DmxControlUtilities.Lib.Services
         private static void UpdateSceneLists(DmzContainer container, Timeshow timeshow)
         {
             var sceneListsFiles = container.Files
-                .Where(f => f.FileName.StartsWith("Config/SceneLists", StringComparison.OrdinalIgnoreCase) && f.FileName.EndsWith(".xml", StringComparison.OrdinalIgnoreCase))
+                .Where(f => f.FileName.StartsWith(ConfigPathSceneLists, StringComparison.OrdinalIgnoreCase) && f.FileName.EndsWith(".xml", StringComparison.OrdinalIgnoreCase))
                 .OrderByDescending(s => s.FileName)
                 .ToList();
 
@@ -387,17 +450,17 @@ namespace DmxControlUtilities.Lib.Services
                 var sceneListsXml = LoadXDocument(file);
                 if (sceneListsXml is null) continue;
 
-                var sceneListsElement = sceneListsXml.Descendants("TreeItem")
-                    .FirstOrDefault(ti => string.Equals((string?)ti.Attribute("Name"), "SceneLists", StringComparison.OrdinalIgnoreCase));
+                var sceneListsElement = sceneListsXml.Descendants(XmlElementTreeItem)
+                    .FirstOrDefault(ti => string.Equals((string?)ti.Attribute(XmlAttributeName), XmlElementSceneLists, StringComparison.OrdinalIgnoreCase));
 
                 if (sceneListsElement is null) continue;
 
-                var fsceneIds = ExtractIdsFromXmlElements(sceneListsElement, "SceneList");
+                var fsceneIds = ExtractIdsFromXmlElements(sceneListsElement, XmlElementScenelist);
                 sceneIds.AddRange(fsceneIds);
 
-                var numbers = sceneListsElement.Elements("TreeItem")
-                    .Where(ti => string.Equals((string?)ti.Attribute("Name"), "SceneList", StringComparison.OrdinalIgnoreCase))
-                    .Select(ti => (string?)ti.Elements("Attribute").FirstOrDefault(a => string.Equals((string?)a.Attribute("Name"), "Number", StringComparison.OrdinalIgnoreCase))?.Attribute("Value"))
+                var numbers = sceneListsElement.Elements(XmlElementTreeItem)
+                    .Where(ti => string.Equals((string?)ti.Attribute(XmlAttributeName), XmlElementScenelist, StringComparison.OrdinalIgnoreCase))
+                    .Select(ti => (string?)ti.Elements(XmlElementAttribute).FirstOrDefault(a => string.Equals((string?)a.Attribute(XmlAttributeName), "Number", StringComparison.OrdinalIgnoreCase))?.Attribute(XmlAttributeValue))
                     .Where(v => !string.IsNullOrEmpty(v))
                     .Select(v => int.TryParse(v, out var n) ? n : 0);
 
@@ -407,8 +470,8 @@ namespace DmxControlUtilities.Lib.Services
             var lastfile = sceneListsFiles.Last();
             var lastsceneListsXml = LoadXDocument(lastfile) ?? throw new InvalidOperationException("Failed to load last SceneLists file.");
 
-            var lastsceneListsElement = lastsceneListsXml.Descendants("TreeItem")
-                .FirstOrDefault(ti => string.Equals((string?)ti.Attribute("Name"), "SceneLists", StringComparison.OrdinalIgnoreCase))
+            var lastsceneListsElement = lastsceneListsXml.Descendants(XmlElementTreeItem)
+                .FirstOrDefault(ti => string.Equals((string?)ti.Attribute(XmlAttributeName), XmlElementSceneLists, StringComparison.OrdinalIgnoreCase))
                 ?? throw new InvalidOperationException("SceneLists element not found in last file.");
 
             foreach (var sceneList in timeshow.SceneLists ?? Enumerable.Empty<SceneList>())
@@ -422,11 +485,11 @@ namespace DmxControlUtilities.Lib.Services
 
                 var newSceneListElement = XElement.Parse(sceneList.Xml);
 
-                var numberAttr = newSceneListElement.Elements("Attribute").FirstOrDefault(x => string.Equals((string?)x.Attribute("Name"), "Number", StringComparison.OrdinalIgnoreCase));
-                numberAttr?.SetAttributeValue("Value", lastNumber);
+                var numberAttr = newSceneListElement.Elements(XmlElementAttribute).FirstOrDefault(x => string.Equals((string?)x.Attribute(XmlAttributeName), "Number", StringComparison.OrdinalIgnoreCase));
+                numberAttr?.SetAttributeValue(XmlAttributeValue, lastNumber);
 
-                var indexAttr = newSceneListElement.Elements("Attribute").FirstOrDefault(x => string.Equals((string?)x.Attribute("Name"), "ZZ_SAVE_INDEX", StringComparison.OrdinalIgnoreCase));
-                indexAttr?.SetAttributeValue("Value", sceneIds.Count);
+                var indexAttr = newSceneListElement.Elements(XmlElementAttribute).FirstOrDefault(x => string.Equals((string?)x.Attribute(XmlAttributeName), "ZZ_SAVE_INDEX", StringComparison.OrdinalIgnoreCase));
+                indexAttr?.SetAttributeValue(XmlAttributeValue, sceneIds.Count);
 
                 lastsceneListsElement.Add(newSceneListElement);
                 sceneIds.Add(sceneList.Id.ToString());
@@ -437,20 +500,20 @@ namespace DmxControlUtilities.Lib.Services
 
         private static void UpdateProjectExplorer(DmzContainer container, Timeshow timeshow)
         {
-            var projectExplorerFile = container.Files.FirstOrDefault(f => f.FileName.Contains("Config/ProjectExplorer.xml", StringComparison.OrdinalIgnoreCase))
+            var projectExplorerFile = container.Files.FirstOrDefault(f => f.FileName.Contains(ConfigPathProjectExplorer, StringComparison.OrdinalIgnoreCase))
                 ?? throw new InvalidOperationException("ProjectExplorer.xml not found.");
 
             var projectExplorerXml = LoadXDocument(projectExplorerFile) ?? throw new InvalidOperationException("Failed to load ProjectExplorer.xml.");
 
-            var cueListsElement = projectExplorerXml.Descendants("TreeItem")
-                .Where(ti => string.Equals((string?)ti.Attribute("Name"), "Branch", StringComparison.OrdinalIgnoreCase))
-                .FirstOrDefault(ti => ti.Elements("Attribute").Any(attr =>
-                    string.Equals((string?)attr.Attribute("Name"), "ID", StringComparison.OrdinalIgnoreCase) &&
-                    string.Equals((string?)attr.Attribute("Value"), "Cuelists", StringComparison.OrdinalIgnoreCase)));
+            var cueListsElement = projectExplorerXml.Descendants(XmlElementTreeItem)
+                .Where(ti => string.Equals((string?)ti.Attribute(XmlAttributeName), "Branch", StringComparison.OrdinalIgnoreCase))
+                .FirstOrDefault(ti => ti.Elements(XmlElementAttribute).Any(attr =>
+                    string.Equals((string?)attr.Attribute(XmlAttributeName), XmlAttributeId, StringComparison.OrdinalIgnoreCase) &&
+                    string.Equals((string?)attr.Attribute(XmlAttributeValue), "Cuelists", StringComparison.OrdinalIgnoreCase)));
 
             if (cueListsElement is null) throw new InvalidOperationException("Cuelists branch not found in ProjectExplorer.xml.");
 
-            int cueListCount = cueListsElement.Descendants("TreeItem").Count(e => string.Equals((string?)e.Attribute("Name"), "Node", StringComparison.OrdinalIgnoreCase));
+            int cueListCount = cueListsElement.Descendants(XmlElementTreeItem).Count(e => string.Equals((string?)e.Attribute(XmlAttributeName), XmlElementNode, StringComparison.OrdinalIgnoreCase));
 
             foreach (var sceneList in timeshow.SceneLists ?? Enumerable.Empty<SceneList>())
             {
@@ -459,31 +522,31 @@ namespace DmxControlUtilities.Lib.Services
                 cueListCount++;
             }
 
-            var timeCodeShowsElement = projectExplorerXml.Descendants("TreeItem")
-                .Where(ti => string.Equals((string?)ti.Attribute("Name"), "Branch", StringComparison.OrdinalIgnoreCase))
-                .FirstOrDefault(ti => ti.Elements("Attribute").Any(attr =>
-                    string.Equals((string?)attr.Attribute("Name"), "ID", StringComparison.OrdinalIgnoreCase) &&
-                    string.Equals((string?)attr.Attribute("Value"), "TimecodeShows", StringComparison.OrdinalIgnoreCase)));
+            var timeCodeShowsElement = projectExplorerXml.Descendants(XmlElementTreeItem)
+                .Where(ti => string.Equals((string?)ti.Attribute(XmlAttributeName), "Branch", StringComparison.OrdinalIgnoreCase))
+                .FirstOrDefault(ti => ti.Elements(XmlElementAttribute).Any(attr =>
+                    string.Equals((string?)attr.Attribute(XmlAttributeName), XmlAttributeId, StringComparison.OrdinalIgnoreCase) &&
+                    string.Equals((string?)attr.Attribute(XmlAttributeValue), XmlElementTimecodeShows, StringComparison.OrdinalIgnoreCase)));
 
             if (timeCodeShowsElement is null) throw new InvalidOperationException("TimecodeShows branch not found in ProjectExplorer.xml.");
 
-            int timeCodeShowsCount = timeCodeShowsElement.Elements("TreeItem").Count(e => string.Equals((string?)e.Attribute("Name"), "Node", StringComparison.OrdinalIgnoreCase));
+            int timeCodeShowsCount = timeCodeShowsElement.Elements(XmlElementTreeItem).Count(e => string.Equals((string?)e.Attribute(XmlAttributeName), XmlElementNode, StringComparison.OrdinalIgnoreCase));
 
             var xelem = XElement.Parse(timeshow.ProjectExplorerXml);
-            var indexAttribute = xelem.Elements("Attribute").FirstOrDefault(x => string.Equals((string?)x.Attribute("Name"), "Index", StringComparison.OrdinalIgnoreCase));
-            indexAttribute?.SetAttributeValue("Value", timeCodeShowsCount);
+            var indexAttribute = xelem.Elements(XmlElementAttribute).FirstOrDefault(x => string.Equals((string?)x.Attribute(XmlAttributeName), "Index", StringComparison.OrdinalIgnoreCase));
+            indexAttribute?.SetAttributeValue(XmlAttributeValue, timeCodeShowsCount);
 
             timeCodeShowsElement.Add(xelem);
 
-            var filesElement = projectExplorerXml.Descendants("TreeItem")
-                .Where(ti => string.Equals((string?)ti.Attribute("Name"), "Branch", StringComparison.OrdinalIgnoreCase))
-                .FirstOrDefault(ti => ti.Elements("Attribute").Any(attr =>
-                    string.Equals((string?)attr.Attribute("Name"), "ID", StringComparison.OrdinalIgnoreCase) &&
-                    string.Equals((string?)attr.Attribute("Value"), "Files", StringComparison.OrdinalIgnoreCase)));
+            var filesElement = projectExplorerXml.Descendants(XmlElementTreeItem)
+                .Where(ti => string.Equals((string?)ti.Attribute(XmlAttributeName), "Branch", StringComparison.OrdinalIgnoreCase))
+                .FirstOrDefault(ti => ti.Elements(XmlElementAttribute).Any(attr =>
+                    string.Equals((string?)attr.Attribute(XmlAttributeName), XmlAttributeId, StringComparison.OrdinalIgnoreCase) &&
+                    string.Equals((string?)attr.Attribute(XmlAttributeValue), "Files", StringComparison.OrdinalIgnoreCase)));
 
             if (filesElement is null) throw new InvalidOperationException("Files branch not found in ProjectExplorer.xml.");
 
-            int fileCount = filesElement.Elements("TreeItem").Count(e => string.Equals((string?)e.Attribute("Name"), "Node", StringComparison.OrdinalIgnoreCase));
+            int fileCount = filesElement.Elements(XmlElementTreeItem).Count(e => string.Equals((string?)e.Attribute(XmlAttributeName), XmlElementNode, StringComparison.OrdinalIgnoreCase));
 
             foreach (var file in timeshow.Files ?? Enumerable.Empty<DmzFile>())
             {
@@ -497,167 +560,60 @@ namespace DmxControlUtilities.Lib.Services
 
         private static void UpdatePresets(DmzContainer container, Timeshow timeshow)
         {
-            var presetListFiles = container.Files
-                .Where(f => f.FileName.StartsWith("Config/Presets", StringComparison.OrdinalIgnoreCase) && f.FileName.EndsWith(".xml", StringComparison.OrdinalIgnoreCase))
-                .OrderByDescending(s => s.FileName)
-                .ToList();
+            var configuration = new UpdateConfiguration(
+                filePathPrefix: ConfigPathPresets,
+                parentElementName: XmlElementPresets,
+                childElementName: XmlElementPreset,
+                errorMessageSuffix: "Presets"
+            );
 
-            if (!presetListFiles.Any()) return;
-
-            var presetIds = new List<string>();
-
-            foreach (var file in presetListFiles)
-            {
-                var presetListsXml = LoadXDocument(file);
-                if (presetListsXml is null) continue;
-
-                var presetsElement = presetListsXml.Descendants("TreeItem")
-                    .FirstOrDefault(ti => string.Equals((string?)ti.Attribute("Name"), "Presets", StringComparison.OrdinalIgnoreCase));
-
-                if (presetsElement is null) continue;
-
-                var fsceneIds = ExtractIdsFromXmlElements(presetsElement, "Preset");
-                presetIds.AddRange(fsceneIds);
-            }
-
-            var lastfile = presetListFiles.Last();
-            var lastsceneListsXml = LoadXDocument(lastfile) ?? throw new InvalidOperationException("Failed to load last Presets file.");
-
-            var lastsceneListsElement = lastsceneListsXml.Descendants("TreeItem")
-                .FirstOrDefault(ti => string.Equals((string?)ti.Attribute("Name"), "Presets", StringComparison.OrdinalIgnoreCase))
-                ?? throw new InvalidOperationException("Presets element not found in last Presets file.");
-
-            foreach (var preset in timeshow.Presets ?? Enumerable.Empty<Preset>())
-            {
-                if (presetIds.Contains(preset.Id.ToString(), StringComparer.OrdinalIgnoreCase))
-                {
-                    continue;
-                }
-
-                var newPresetElement = XElement.Parse(preset.Xml);
-                var indexAttr = newPresetElement.Elements("Attribute").FirstOrDefault(x => string.Equals((string?)x.Attribute("Name"), "ZZ_SAVE_INDEX", StringComparison.OrdinalIgnoreCase));
-                indexAttr?.SetAttributeValue("Value", presetIds.Count);
-
-                lastsceneListsElement.Add(newPresetElement);
-                presetIds.Add(preset.Id.ToString());
-            }
-
-            SaveXmlToFileStream(lastsceneListsXml, lastfile);
+            var presets = timeshow.Presets ?? Enumerable.Empty<Preset>();
+            UpdateConfigurationElements(container, presets, p => p.Id, p => p.Xml, configuration);
         }
 
 
         private static void UpdateDeviceGroups(DmzContainer container, Timeshow timeshow)
         {
-            var deviceListFiles = container.Files
-                .Where(f => f.FileName.StartsWith("Config/DeviceGroups", StringComparison.OrdinalIgnoreCase) && f.FileName.EndsWith(".xml", StringComparison.OrdinalIgnoreCase))
-                .OrderByDescending(s => s.FileName)
-                .ToList();
+            var configuration = new UpdateConfiguration(
+                filePathPrefix: ConfigPathDeviceGroups,
+                parentElementName: XmlElementDeviceGroups,
+                childElementName: XmlElementDeviceGroup,
+                errorMessageSuffix: "DeviceGroups"
+            );
 
-            if (!deviceListFiles.Any()) return;
-
-            var deviceGroupIds = new List<string>();
-
-            foreach (var file in deviceListFiles)
-            {
-                var deviceListsXml = LoadXDocument(file);
-                if (deviceListsXml is null) continue;
-
-                var devicesElement = deviceListsXml.Descendants("TreeItem")
-                    .FirstOrDefault(ti => string.Equals((string?)ti.Attribute("Name"), "DeviceGroups", StringComparison.OrdinalIgnoreCase));
-
-                if (devicesElement is null) continue;
-
-                var fsceneIds = ExtractIdsFromXmlElements(devicesElement, "DeviceGroup");
-                deviceGroupIds.AddRange(fsceneIds);
-            }
-
-            var lastfile = deviceListFiles.Last();
-            var lastDeviceGroupsXml = LoadXDocument(lastfile) ?? throw new InvalidOperationException("Failed to load last Presets file.");
-
-            var lastDeviceGroupsElement = lastDeviceGroupsXml.Descendants("TreeItem")
-                .FirstOrDefault(ti => string.Equals((string?)ti.Attribute("Name"), "DeviceGroups", StringComparison.OrdinalIgnoreCase))
-                ?? throw new InvalidOperationException("DeviceGroups element not found in last DeviceGroups file.");
-
-            foreach (var preset in timeshow.DeviceGroup ?? Enumerable.Empty<DeviceGroup>())
-            {
-                if (deviceGroupIds.Contains(preset.Id.ToString(), StringComparer.OrdinalIgnoreCase))
-                {
-                    continue;
-                }
-
-                var newDeviceGroupElement = XElement.Parse(preset.Xml);
-
-                var indexAttr = newDeviceGroupElement.Elements("Attribute").FirstOrDefault(x => string.Equals((string?)x.Attribute("Name"), "ZZ_SAVE_INDEX", StringComparison.OrdinalIgnoreCase));
-                indexAttr?.SetAttributeValue("Value", deviceGroupIds.Count);
-
-                SetAttributeValueElementFromTreeItemParameter(newDeviceGroupElement, "Group Number", deviceGroupIds.Count + 1);
-
-                lastDeviceGroupsElement.Add(newDeviceGroupElement);
-                deviceGroupIds.Add(preset.Id.ToString());
-            }
-
-            SaveXmlToFileStream(lastDeviceGroupsXml, lastfile);
+            var deviceGroups = timeshow.DeviceGroup ?? Enumerable.Empty<DeviceGroup>();
+            UpdateConfigurationElements(
+                container, 
+                deviceGroups, 
+                dg => dg.Id, 
+                dg => dg.Xml, 
+                configuration,
+                additionalAction: (element, index) => SetAttributeValueElementFromTreeItemParameter(element, "Group Number", index + 1)
+            );
         }
 
         private static void UpdateItemLists(DmzContainer container, Timeshow timeshow)
         {
-            var itemListFiles = container.Files
-                .Where(f => f.FileName.StartsWith("Config/ItemList", StringComparison.OrdinalIgnoreCase) && f.FileName.EndsWith(".xml", StringComparison.OrdinalIgnoreCase))
-                .OrderByDescending(s => s.FileName)
-                .ToList();
+            var configuration = new UpdateConfiguration(
+                filePathPrefix: ConfigPathItemList,
+                parentElementName: XmlElementItemLists,
+                childElementName: XmlElementColorlist,
+                errorMessageSuffix: "ItemLists"
+            );
 
-            if (!itemListFiles.Any()) return;
-
-            var itemlistIds = new List<string>();
-
-            foreach (var file in itemListFiles)
-            {
-                var itemListsXml = LoadXDocument(file);
-                if (itemListsXml is null) continue;
-
-                var presetsElement = itemListsXml.Descendants("TreeItem")
-                    .FirstOrDefault(ti => string.Equals((string?)ti.Attribute("Name"), "ItemLists", StringComparison.OrdinalIgnoreCase));
-
-                if (presetsElement is null) continue;
-
-                var colorListIds = ExtractIdsFromXmlElements(presetsElement, "Colorlist");
-                itemlistIds.AddRange(colorListIds);
-            }
-
-            var lastfile = itemListFiles.Last();
-            var lastItemListsXml = LoadXDocument(lastfile) ?? throw new InvalidOperationException("Failed to load last Presets file.");
-
-            var lastitemListsElement = lastItemListsXml.Descendants("TreeItem")
-                .FirstOrDefault(ti => string.Equals((string?)ti.Attribute("Name"), "ItemLists", StringComparison.OrdinalIgnoreCase))
-                ?? throw new InvalidOperationException("Presets element not found in last Presets file.");
-
-            foreach (var itemList in timeshow.ItemLists ?? Enumerable.Empty<ItemListEntry>())
-            {
-                if (itemlistIds.Contains(itemList.Id.ToString(), StringComparer.OrdinalIgnoreCase))
-                {
-                    continue;
-                }
-
-                var newPresetElement = XElement.Parse(itemList.Xml);
-                var indexAttr = newPresetElement.Elements("Attribute").FirstOrDefault(x => string.Equals((string?)x.Attribute("Name"), "ZZ_SAVE_INDEX", StringComparison.OrdinalIgnoreCase));
-                indexAttr?.SetAttributeValue("Value", itemlistIds.Count);
-
-                lastitemListsElement.Add(newPresetElement);
-                itemlistIds.Add(itemList.Id.ToString());
-            }
-
-            SaveXmlToFileStream(lastItemListsXml, lastfile);
+            var itemLists = timeshow.ItemLists ?? Enumerable.Empty<ItemListEntry>();
+            UpdateConfigurationElements(container, itemLists, il => il.Id, il => il.Xml, configuration);
         }
 
         private static XElement GetResourcesElement(string pName, bool value)
         {
-            return new XElement("TreeItem",
-                new XAttribute("Name", pName.Replace("Config/", string.Empty).Replace("/", "\\")),
-                new XElement("Attribute",
-                    new XAttribute("Name", "UserImported"),
+            return new XElement(XmlElementTreeItem,
+                new XAttribute(XmlAttributeName, pName.Replace(ConfigPath, string.Empty).Replace("/", "\\")),
+                new XElement(XmlElementAttribute,
+                    new XAttribute(XmlAttributeName, "UserImported"),
                     new XAttribute("Type", "Primitive"),
                     new XAttribute("ValueType", "Boolean"),
-                    new XAttribute("Value", value)
+                    new XAttribute(XmlAttributeValue, value)
                 )
             );
         }
@@ -703,28 +659,109 @@ namespace DmxControlUtilities.Lib.Services
             var descAttr = parent.Descendants("Attribute")
                 .FirstOrDefault(a => string.Equals((string?)a.Attribute("Name"), attributeName, StringComparison.OrdinalIgnoreCase));
 
-            return descAttr?.Attribute("Value")?.Value;
-        }
+                return descAttr?.Attribute("Value")?.Value;
+            }
 
-        /*
-          <TreeItem Name="Parameter">
-            <Attribute Name="Name" Type="Primitive" ValueType="String" Value="Group Number" />
-            <Attribute Name="Value" Type="Primitive" ValueType="UInt32" Value="15" />
-          </TreeItem>
-         */
-        private static void SetAttributeValueElementFromTreeItemParameter(XElement element, string nameValue, int value)
-        {
-            var elemen = element.Descendants("TreeItem")
-                .First(ti => ti.Elements("Attribute").Any(attr =>
-                        string.Equals((string?)attr.Attribute("Name"), "Name", StringComparison.OrdinalIgnoreCase) &&
-                        string.Equals((string?)attr.Attribute("Value"), nameValue, StringComparison.OrdinalIgnoreCase)));
+            /// <summary>
+            /// Finds a TreeItem element by its Name attribute value, using case-insensitive comparison.
+            /// </summary>
+            private static XElement? FindTreeItemByName(IEnumerable<XElement> elements, string nameValue)
+            {
+                return elements
+                    .FirstOrDefault(ti => string.Equals((string?)ti.Attribute(XmlAttributeName), nameValue, StringComparison.OrdinalIgnoreCase));
+            }
 
-            var valueelement = elemen.Elements("Attribute").First(a => a.Attribute("Name")!.Value == "Value");
+            /// <summary>
+            /// Finds a TreeItem element that contains an Attribute with specific Name and Value, using case-insensitive comparison.
+            /// </summary>
+            private static XElement? FindTreeItemByAttributeValue(IEnumerable<XElement> elements, string attributeName, string attributeValue)
+            {
+                return elements
+                    .FirstOrDefault(ti => ti.Elements(XmlElementAttribute)
+                        .Any(attr =>
+                            string.Equals((string?)attr.Attribute(XmlAttributeName), attributeName, StringComparison.OrdinalIgnoreCase) &&
+                            string.Equals((string?)attr.Attribute(XmlAttributeValue), attributeValue, StringComparison.OrdinalIgnoreCase)));
+            }
 
-            var valueAttr = valueelement.Attribute("Value");
+            /// <summary>
+            /// Finds a TreeItem element by Name, then searches its descendants for another TreeItem with a specific attribute Name and value.
+            /// </summary>
+            private static XElement? FindNodeByIdAttribute(XDocument xmlDocument, string attributeValue)
+            {
+                var treeItems = xmlDocument.Descendants(XmlElementTreeItem)
+                    .Where(ti => string.Equals((string?)ti.Attribute(XmlAttributeName), XmlElementNode, StringComparison.OrdinalIgnoreCase));
 
-            valueAttr.Value = value.ToString();
-        }
+                return FindTreeItemByAttributeValue(treeItems, XmlAttributeId, attributeValue);
+            }
+
+            /// <summary>
+            /// Collects sound files referenced in a timeshow and adds them to the timeshow's file collection.
+            /// </summary>
+            private static void CollectSoundFiles(DmzContainer container, XDocument timecodeXml, Timeshow timeshow)
+            {
+                var soundFiles = timecodeXml.Descendants(XmlElementTreeItem)
+                    .Where(x => string.Equals((string?)x.Attribute(XmlAttributeName), XmlElementSoundFile, StringComparison.OrdinalIgnoreCase))
+                    .Select(x => GetAttributeValue(x, "SoundFileName"))
+                    .Where(fn => !string.IsNullOrWhiteSpace(fn))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+
+                foreach (var fileName in soundFiles)
+                {
+                    // try to find matching file in container
+                    var soundFile = container.Files.FirstOrDefault(f =>
+                        f.FileName.Contains($"{ConfigPath}{fileName}", StringComparison.OrdinalIgnoreCase) ||
+                        f.FileName.EndsWith(fileName, StringComparison.OrdinalIgnoreCase));
+
+                    if (soundFile != null)
+                    {
+                        timeshow.Files.Add(soundFile);
+                    }
+                }
+            }
+
+            /// <summary>
+            /// Populates the SceneLists collection of a timeshow from XML and available scene lists.
+            /// </summary>
+            private static void PopulateSceneLists(XDocument timecodeXml, List<SceneList> availableSceneLists, Timeshow timeshow)
+            {
+                var sceneListIdSections = timecodeXml.Descendants(XmlElementTreeItem)
+                    .Where(x => string.Equals((string?)x.Attribute(XmlAttributeName), XmlElementScenelistIds, StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+
+                foreach (var section in sceneListIdSections)
+                {
+                    var scenelists = section.Descendants(XmlElementTreeItem)
+                        .Where(x => string.Equals((string?)x.Attribute(XmlAttributeName), XmlElementScenelist, StringComparison.OrdinalIgnoreCase));
+
+                    foreach (var scenelist in scenelists)
+                    {
+                        var sceneListIdValue = GetAttributeValue(scenelist, "SceneListID");
+                        if (Guid.TryParse(sceneListIdValue, out var parsedId))
+                        {
+                            var sceneList = availableSceneLists.FirstOrDefault(s => s.Id == parsedId);
+                            if (sceneList != null && !timeshow.SceneLists.Any(s => s.Id == sceneList.Id))
+                            {
+                                timeshow.SceneLists.Add(sceneList);
+                            }
+                        }
+                    }
+                }
+            }
+
+                private static void SetAttributeValueElementFromTreeItemParameter(XElement element, string nameValue, int value)
+            {
+                var elemen = element.Descendants(XmlElementTreeItem)
+                    .First(ti => ti.Elements(XmlElementAttribute).Any(attr =>
+                            string.Equals((string?)attr.Attribute(XmlAttributeName), XmlAttributeName, StringComparison.OrdinalIgnoreCase) &&
+                            string.Equals((string?)attr.Attribute(XmlAttributeValue), nameValue, StringComparison.OrdinalIgnoreCase)));
+
+                var valueelement = elemen.Elements(XmlElementAttribute).First(a => a.Attribute(XmlAttributeName)!.Value == XmlAttributeValue);
+
+                var valueAttr = valueelement.Attribute(XmlAttributeValue);
+
+                valueAttr.Value = value.ToString();
+            }
 
         /// <summary>
         /// Extracts ID values from TreeItem elements with a specific name attribute.
@@ -733,9 +770,9 @@ namespace DmxControlUtilities.Lib.Services
         {
             if (parentElement is null) return new List<string>();
 
-            return parentElement.Elements("TreeItem")
-                .Where(ti => string.Equals((string?)ti.Attribute("Name"), treeItemName, StringComparison.OrdinalIgnoreCase))
-                .Select(ti => (string?)ti.Elements("Attribute").FirstOrDefault(a => string.Equals((string?)a.Attribute("Name"), "ID", StringComparison.OrdinalIgnoreCase))?.Attribute("Value"))
+            return parentElement.Elements(XmlElementTreeItem)
+                .Where(ti => string.Equals((string?)ti.Attribute(XmlAttributeName), treeItemName, StringComparison.OrdinalIgnoreCase))
+                .Select(ti => (string?)ti.Elements(XmlElementAttribute).FirstOrDefault(a => string.Equals((string?)a.Attribute(XmlAttributeName), XmlAttributeId, StringComparison.OrdinalIgnoreCase))?.Attribute(XmlAttributeValue))
                 .Where(id => !string.IsNullOrEmpty(id))
                 .ToList();
         }
@@ -745,19 +782,19 @@ namespace DmxControlUtilities.Lib.Services
         /// </summary>
         private static XElement CreateTreeItemNode(string id, int index)
         {
-            return new XElement("TreeItem",
-                new XAttribute("Name", "Node"),
-                new XElement("Attribute",
-                    new XAttribute("Name", "ID"),
+            return new XElement(XmlElementTreeItem,
+                new XAttribute(XmlAttributeName, XmlElementNode),
+                new XElement(XmlElementAttribute,
+                    new XAttribute(XmlAttributeName, XmlAttributeId),
                     new XAttribute("Type", "Primitive"),
                     new XAttribute("ValueType", "String"),
-                    new XAttribute("Value", id)
+                    new XAttribute(XmlAttributeValue, id)
                 ),
-                new XElement("Attribute",
-                    new XAttribute("Name", "Index"),
+                new XElement(XmlElementAttribute,
+                    new XAttribute(XmlAttributeName, "Index"),
                     new XAttribute("Type", "Primitive"),
                     new XAttribute("ValueType", "Int32"),
-                    new XAttribute("Value", index)
+                    new XAttribute(XmlAttributeValue, index)
                 )
             );
         }

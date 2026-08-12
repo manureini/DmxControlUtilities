@@ -23,4 +23,4 @@ var destContainer = timeshowService.AddTimeshow(dest, ts);
 var ms = new MemoryStream();
 dmzFileService.WriteDmzFile(destContainer, ms);
 
-File.WriteAllBytes("H:\\Nextcloud\\DMXControl\\merged_test.zip", ms.ToArray());
+File.WriteAllBytes("H:\\Nextcloud\\DMXControl\\merged_test2.zip", ms.ToArray());
