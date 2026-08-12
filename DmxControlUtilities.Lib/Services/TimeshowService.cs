@@ -571,7 +571,7 @@ namespace DmxControlUtilities.Lib.Services
 
             if (!deviceListFiles.Any()) return;
 
-            var deviceIds = new List<string>();
+            var deviceGroupIds = new List<string>();
 
             foreach (var file in deviceListFiles)
             {
@@ -589,35 +589,36 @@ namespace DmxControlUtilities.Lib.Services
                     .Where(id => !string.IsNullOrEmpty(id))
                     .ToList();
 
-                deviceIds.AddRange(fsceneIds);
+                deviceGroupIds.AddRange(fsceneIds);
             }
 
             var lastfile = deviceListFiles.Last();
-            var lastsceneListsXml = LoadXDocument(lastfile) ?? throw new InvalidOperationException("Failed to load last Presets file.");
+            var lastDeviceGroupsXml = LoadXDocument(lastfile) ?? throw new InvalidOperationException("Failed to load last Presets file.");
 
-            var lastsceneListsElement = lastsceneListsXml.Descendants("TreeItem")
+            var lastDeviceGroupsElement = lastDeviceGroupsXml.Descendants("TreeItem")
                 .FirstOrDefault(ti => string.Equals((string?)ti.Attribute("Name"), "DeviceGroups", StringComparison.OrdinalIgnoreCase))
                 ?? throw new InvalidOperationException("DeviceGroups element not found in last DeviceGroups file.");
 
             foreach (var preset in timeshow.DeviceGroup ?? Enumerable.Empty<DeviceGroup>())
             {
-                if (deviceIds.Contains(preset.Id.ToString(), StringComparer.OrdinalIgnoreCase))
+                if (deviceGroupIds.Contains(preset.Id.ToString(), StringComparer.OrdinalIgnoreCase))
                 {
                     continue;
                 }
 
-                var newPresetElement = XElement.Parse(preset.Xml);
-                var indexAttr = newPresetElement.Elements("Attribute").FirstOrDefault(x => string.Equals((string?)x.Attribute("Name"), "ZZ_SAVE_INDEX", StringComparison.OrdinalIgnoreCase));
-                indexAttr?.SetAttributeValue("Value", deviceIds.Count);
+                var newDeviceGroupElement = XElement.Parse(preset.Xml);
 
-                //todo update group number
+                var indexAttr = newDeviceGroupElement.Elements("Attribute").FirstOrDefault(x => string.Equals((string?)x.Attribute("Name"), "ZZ_SAVE_INDEX", StringComparison.OrdinalIgnoreCase));
+                indexAttr?.SetAttributeValue("Value", deviceGroupIds.Count);
 
-                lastsceneListsElement.Add(newPresetElement);
-                deviceIds.Add(preset.Id.ToString());
+                SetAttributeValueElementFromTreeItemParameter(newDeviceGroupElement, "Group Number", deviceGroupIds.Count + 1);
+
+                lastDeviceGroupsElement.Add(newDeviceGroupElement);
+                deviceGroupIds.Add(preset.Id.ToString());
             }
 
             var ms = new MemoryStream();
-            lastsceneListsXml.Save(ms);
+            lastDeviceGroupsXml.Save(ms);
             ms.Seek(0, SeekOrigin.Begin);
             lastfile.FileStream = ms;
         }
@@ -679,5 +680,26 @@ namespace DmxControlUtilities.Lib.Services
 
             return descAttr?.Attribute("Value")?.Value;
         }
+
+        /*
+          <TreeItem Name="Parameter">
+            <Attribute Name="Name" Type="Primitive" ValueType="String" Value="Group Number" />
+            <Attribute Name="Value" Type="Primitive" ValueType="UInt32" Value="15" />
+          </TreeItem>
+         */
+        private static void SetAttributeValueElementFromTreeItemParameter(XElement element, string nameValue, int value)
+        {
+            var elemen = element.Descendants("TreeItem")
+                .First(ti => ti.Elements("Attribute").Any(attr =>
+                        string.Equals((string?)attr.Attribute("Name"), "Name", StringComparison.OrdinalIgnoreCase) &&
+                        string.Equals((string?)attr.Attribute("Value"), nameValue, StringComparison.OrdinalIgnoreCase)));
+
+            var valueelement = elemen.Elements("Attribute").First(a => a.Attribute("Name")!.Value == "Value");
+
+            var valueAttr = valueelement.Attribute("Value");
+
+            valueAttr.Value = value.ToString();
+        }
+
     }
 }

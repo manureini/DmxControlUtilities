@@ -586,7 +586,6 @@ namespace DmxControlUtilities.Web.Services
             }, _connectionClientDataHostMetadata);
         }
 
-
         public async Task SetProgrammerDimmer(string groupId, int value)
         {
             var request5 = new GetMultipleRequest()
@@ -621,9 +620,6 @@ namespace DmxControlUtilities.Web.Services
                 }
             }, _connectionClientDataHostMetadata);
         }
-
-
-
 
     }
 }
