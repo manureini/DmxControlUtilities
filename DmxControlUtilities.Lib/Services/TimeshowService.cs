@@ -148,6 +148,8 @@ namespace DmxControlUtilities.Lib.Services
 
             ret.Presets = GetPresets(container);
             ret.DeviceGroup = GetDeviceGroups(container);
+            ret.ItemLists = GetItemListEntries(container);
+
             return ret;
         }
 
@@ -221,6 +223,40 @@ namespace DmxControlUtilities.Lib.Services
             return deviceGroups;
         }
 
+        public List<ItemListEntry> GetItemListEntries(DmzContainer container)
+        {
+            var itemLists = new List<ItemListEntry>();
+
+            var files = container.Files
+             .Where(f => f.FileName.StartsWith("Config/ItemList", StringComparison.OrdinalIgnoreCase))
+             .ToList();
+
+            foreach (var file in files)
+            {
+                var xml = LoadXDocument(file);
+                if (xml is null) continue;
+
+                var presetElements = xml.Descendants("TreeItem")
+                    .Where(e => string.Equals((string?)e.Attribute("Name"), "Colorlist", StringComparison.OrdinalIgnoreCase));
+
+                foreach (var element in presetElements)
+                {
+                    var id = GetAttributeValue(element, "ID");
+
+                    if (Guid.TryParse(id, out var parsedId))
+                    {
+                        itemLists.Add(new ItemListEntry
+                        {
+                            Id = parsedId,
+                            Xml = element.ToString()
+                        });
+                    }
+                }
+            }
+
+            return itemLists;
+        }
+
         public DmzContainer AddTimeshow(DmzContainer container, Timeshow timeshow)
         {
             if (container is null) throw new ArgumentNullException(nameof(container));
@@ -246,6 +282,7 @@ namespace DmxControlUtilities.Lib.Services
             UpdateResourceMetadata(container, timeshow);
             UpdatePresets(container, timeshow);
             UpdateDeviceGroups(container, timeshow);
+            UpdateItemLists(container, timeshow);
 
             if (timeshow.Files?.Any() == true)
             {
@@ -623,6 +660,63 @@ namespace DmxControlUtilities.Lib.Services
             lastfile.FileStream = ms;
         }
 
+        private static void UpdateItemLists(DmzContainer container, Timeshow timeshow)
+        {
+            var itemListFiles = container.Files
+                .Where(f => f.FileName.StartsWith("Config/ItemList", StringComparison.OrdinalIgnoreCase) && f.FileName.EndsWith(".xml", StringComparison.OrdinalIgnoreCase))
+                .OrderByDescending(s => s.FileName)
+                .ToList();
+
+            if (!itemListFiles.Any()) return;
+
+            var itemlistIds = new List<string>();
+
+            foreach (var file in itemListFiles)
+            {
+                var itemListsXml = LoadXDocument(file);
+                if (itemListsXml is null) continue;
+
+                var presetsElement = itemListsXml.Descendants("TreeItem")
+                    .FirstOrDefault(ti => string.Equals((string?)ti.Attribute("Name"), "ItemLists", StringComparison.OrdinalIgnoreCase));
+
+                if (presetsElement is null) continue;
+
+                var colorListIds = presetsElement.Elements("TreeItem")
+                    .Where(ti => string.Equals((string?)ti.Attribute("Name"), "Colorlist", StringComparison.OrdinalIgnoreCase))
+                    .Select(ti => (string?)ti.Elements("Attribute").FirstOrDefault(a => string.Equals((string?)a.Attribute("Name"), "ID", StringComparison.OrdinalIgnoreCase))?.Attribute("Value"))
+                    .Where(id => !string.IsNullOrEmpty(id))
+                    .ToList();
+
+                itemlistIds.AddRange(colorListIds);
+            }
+
+            var lastfile = itemListFiles.Last();
+            var lastItemListsXml = LoadXDocument(lastfile) ?? throw new InvalidOperationException("Failed to load last Presets file.");
+
+            var lastitemListsElement = lastItemListsXml.Descendants("TreeItem")
+                .FirstOrDefault(ti => string.Equals((string?)ti.Attribute("Name"), "ItemLists", StringComparison.OrdinalIgnoreCase))
+                ?? throw new InvalidOperationException("Presets element not found in last Presets file.");
+
+            foreach (var itemList in timeshow.ItemLists ?? Enumerable.Empty<ItemListEntry>())
+            {
+                if (itemlistIds.Contains(itemList.Id.ToString(), StringComparer.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                var newPresetElement = XElement.Parse(itemList.Xml);
+                var indexAttr = newPresetElement.Elements("Attribute").FirstOrDefault(x => string.Equals((string?)x.Attribute("Name"), "ZZ_SAVE_INDEX", StringComparison.OrdinalIgnoreCase));
+                indexAttr?.SetAttributeValue("Value", itemlistIds.Count);
+
+                lastitemListsElement.Add(newPresetElement);
+                itemlistIds.Add(itemList.Id.ToString());
+            }
+
+            var ms = new MemoryStream();
+            lastItemListsXml.Save(ms);
+            ms.Seek(0, SeekOrigin.Begin);
+            lastfile.FileStream = ms;
+        }
 
         private static XElement GetResourcesElement(string pName, bool value)
         {

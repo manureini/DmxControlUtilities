@@ -12,12 +12,14 @@
 
         public string ProjectExplorerXml { get; set; } = string.Empty;
 
-        public List<DmzFile> Files { get; set; } = new List<DmzFile>();
+        public List<DmzFile> Files { get; set; } = [];
 
-        public List<SceneList> SceneLists { get; set; } = new List<SceneList>();
+        public List<SceneList> SceneLists { get; set; } = [];
 
-        public List<Preset> Presets { get; set; } = new List<Preset>();
+        public List<Preset> Presets { get; set; } = [];
 
-        public List<DeviceGroup> DeviceGroup { get; set; } = new List<DeviceGroup>();
+        public List<DeviceGroup> DeviceGroup { get; set; } = [];
+
+        public List<ItemListEntry> ItemLists { get; set; } = [];
     }
 }
