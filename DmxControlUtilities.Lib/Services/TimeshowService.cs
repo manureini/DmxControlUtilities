@@ -315,10 +315,7 @@ namespace DmxControlUtilities.Lib.Services
                 projectResourcesElement.Add(resourceElement);
             }
 
-            var ms = new MemoryStream();
-            resourceMetadataXml.Save(ms);
-            ms.Seek(0, SeekOrigin.Begin);
-            projectExplorerFile.FileStream = ms;
+            SaveXmlToFileStream(resourceMetadataXml, projectExplorerFile);
         }
 
         private static void UpdateTimecodeShows(DmzContainer container, Timeshow timeshow)
@@ -370,10 +367,7 @@ namespace DmxControlUtilities.Lib.Services
 
             timecodeShowsElement.Add(timecodeShowElement);
 
-            var ms = new MemoryStream();
-            timecodeShowsXml.Save(ms);
-            ms.Seek(0, SeekOrigin.Begin);
-            timecodeShowsFile.FileStream = ms;
+            SaveXmlToFileStream(timecodeShowsXml, timecodeShowsFile);
         }
 
         private static void UpdateSceneLists(DmzContainer container, Timeshow timeshow)
@@ -398,12 +392,7 @@ namespace DmxControlUtilities.Lib.Services
 
                 if (sceneListsElement is null) continue;
 
-                var fsceneIds = sceneListsElement.Elements("TreeItem")
-                    .Where(ti => string.Equals((string?)ti.Attribute("Name"), "SceneList", StringComparison.OrdinalIgnoreCase))
-                    .Select(ti => (string?)ti.Elements("Attribute").FirstOrDefault(a => string.Equals((string?)a.Attribute("Name"), "ID", StringComparison.OrdinalIgnoreCase))?.Attribute("Value"))
-                    .Where(id => !string.IsNullOrEmpty(id))
-                    .ToList();
-
+                var fsceneIds = ExtractIdsFromXmlElements(sceneListsElement, "SceneList");
                 sceneIds.AddRange(fsceneIds);
 
                 var numbers = sceneListsElement.Elements("TreeItem")
@@ -443,10 +432,7 @@ namespace DmxControlUtilities.Lib.Services
                 sceneIds.Add(sceneList.Id.ToString());
             }
 
-            var ms = new MemoryStream();
-            lastsceneListsXml.Save(ms);
-            ms.Seek(0, SeekOrigin.Begin);
-            lastfile.FileStream = ms;
+            SaveXmlToFileStream(lastsceneListsXml, lastfile);
         }
 
         private static void UpdateProjectExplorer(DmzContainer container, Timeshow timeshow)
@@ -468,21 +454,7 @@ namespace DmxControlUtilities.Lib.Services
 
             foreach (var sceneList in timeshow.SceneLists ?? Enumerable.Empty<SceneList>())
             {
-                var treeItem = new XElement("TreeItem",
-                    new XAttribute("Name", "Node"),
-                    new XElement("Attribute",
-                        new XAttribute("Name", "ID"),
-                        new XAttribute("Type", "Primitive"),
-                        new XAttribute("ValueType", "String"),
-                        new XAttribute("Value", sceneList.Id)
-                    ),
-                    new XElement("Attribute",
-                        new XAttribute("Name", "Index"),
-                        new XAttribute("Type", "Primitive"),
-                        new XAttribute("ValueType", "Int32"),
-                        new XAttribute("Value", cueListCount)
-                    ));
-
+                var treeItem = CreateTreeItemNode(sceneList.Id.ToString(), cueListCount);
                 cueListsElement.Add(treeItem);
                 cueListCount++;
             }
@@ -515,29 +487,12 @@ namespace DmxControlUtilities.Lib.Services
 
             foreach (var file in timeshow.Files ?? Enumerable.Empty<DmzFile>())
             {
-                var treeItem = new XElement("TreeItem",
-                    new XAttribute("Name", "Node"),
-                    new XElement("Attribute",
-                        new XAttribute("Name", "ID"),
-                        new XAttribute("Type", "Primitive"),
-                        new XAttribute("ValueType", "String"),
-                        new XAttribute("Value", Path.GetFileName(file.FileName))
-                    ),
-                    new XElement("Attribute",
-                        new XAttribute("Name", "Index"),
-                        new XAttribute("Type", "Primitive"),
-                        new XAttribute("ValueType", "Int32"),
-                        new XAttribute("Value", fileCount)
-                    ));
-
+                var treeItem = CreateTreeItemNode(Path.GetFileName(file.FileName), fileCount);
                 filesElement.Add(treeItem);
                 fileCount++;
             }
 
-            var ms = new MemoryStream();
-            projectExplorerXml.Save(ms);
-            ms.Seek(0, SeekOrigin.Begin);
-            projectExplorerFile.FileStream = ms;
+            SaveXmlToFileStream(projectExplorerXml, projectExplorerFile);
         }
 
         private static void UpdatePresets(DmzContainer container, Timeshow timeshow)
@@ -561,12 +516,7 @@ namespace DmxControlUtilities.Lib.Services
 
                 if (presetsElement is null) continue;
 
-                var fsceneIds = presetsElement.Elements("TreeItem")
-                    .Where(ti => string.Equals((string?)ti.Attribute("Name"), "Preset", StringComparison.OrdinalIgnoreCase))
-                    .Select(ti => (string?)ti.Elements("Attribute").FirstOrDefault(a => string.Equals((string?)a.Attribute("Name"), "ID", StringComparison.OrdinalIgnoreCase))?.Attribute("Value"))
-                    .Where(id => !string.IsNullOrEmpty(id))
-                    .ToList();
-
+                var fsceneIds = ExtractIdsFromXmlElements(presetsElement, "Preset");
                 presetIds.AddRange(fsceneIds);
             }
 
@@ -592,10 +542,7 @@ namespace DmxControlUtilities.Lib.Services
                 presetIds.Add(preset.Id.ToString());
             }
 
-            var ms = new MemoryStream();
-            lastsceneListsXml.Save(ms);
-            ms.Seek(0, SeekOrigin.Begin);
-            lastfile.FileStream = ms;
+            SaveXmlToFileStream(lastsceneListsXml, lastfile);
         }
 
 
@@ -620,12 +567,7 @@ namespace DmxControlUtilities.Lib.Services
 
                 if (devicesElement is null) continue;
 
-                var fsceneIds = devicesElement.Elements("TreeItem")
-                    .Where(ti => string.Equals((string?)ti.Attribute("Name"), "DeviceGroup", StringComparison.OrdinalIgnoreCase))
-                    .Select(ti => (string?)ti.Elements("Attribute").FirstOrDefault(a => string.Equals((string?)a.Attribute("Name"), "ID", StringComparison.OrdinalIgnoreCase))?.Attribute("Value"))
-                    .Where(id => !string.IsNullOrEmpty(id))
-                    .ToList();
-
+                var fsceneIds = ExtractIdsFromXmlElements(devicesElement, "DeviceGroup");
                 deviceGroupIds.AddRange(fsceneIds);
             }
 
@@ -654,10 +596,7 @@ namespace DmxControlUtilities.Lib.Services
                 deviceGroupIds.Add(preset.Id.ToString());
             }
 
-            var ms = new MemoryStream();
-            lastDeviceGroupsXml.Save(ms);
-            ms.Seek(0, SeekOrigin.Begin);
-            lastfile.FileStream = ms;
+            SaveXmlToFileStream(lastDeviceGroupsXml, lastfile);
         }
 
         private static void UpdateItemLists(DmzContainer container, Timeshow timeshow)
@@ -681,12 +620,7 @@ namespace DmxControlUtilities.Lib.Services
 
                 if (presetsElement is null) continue;
 
-                var colorListIds = presetsElement.Elements("TreeItem")
-                    .Where(ti => string.Equals((string?)ti.Attribute("Name"), "Colorlist", StringComparison.OrdinalIgnoreCase))
-                    .Select(ti => (string?)ti.Elements("Attribute").FirstOrDefault(a => string.Equals((string?)a.Attribute("Name"), "ID", StringComparison.OrdinalIgnoreCase))?.Attribute("Value"))
-                    .Where(id => !string.IsNullOrEmpty(id))
-                    .ToList();
-
+                var colorListIds = ExtractIdsFromXmlElements(presetsElement, "Colorlist");
                 itemlistIds.AddRange(colorListIds);
             }
 
@@ -712,10 +646,7 @@ namespace DmxControlUtilities.Lib.Services
                 itemlistIds.Add(itemList.Id.ToString());
             }
 
-            var ms = new MemoryStream();
-            lastItemListsXml.Save(ms);
-            ms.Seek(0, SeekOrigin.Begin);
-            lastfile.FileStream = ms;
+            SaveXmlToFileStream(lastItemListsXml, lastfile);
         }
 
         private static XElement GetResourcesElement(string pName, bool value)
@@ -793,6 +724,55 @@ namespace DmxControlUtilities.Lib.Services
             var valueAttr = valueelement.Attribute("Value");
 
             valueAttr.Value = value.ToString();
+        }
+
+        /// <summary>
+        /// Extracts ID values from TreeItem elements with a specific name attribute.
+        /// </summary>
+        private static List<string> ExtractIdsFromXmlElements(XElement parentElement, string treeItemName)
+        {
+            if (parentElement is null) return new List<string>();
+
+            return parentElement.Elements("TreeItem")
+                .Where(ti => string.Equals((string?)ti.Attribute("Name"), treeItemName, StringComparison.OrdinalIgnoreCase))
+                .Select(ti => (string?)ti.Elements("Attribute").FirstOrDefault(a => string.Equals((string?)a.Attribute("Name"), "ID", StringComparison.OrdinalIgnoreCase))?.Attribute("Value"))
+                .Where(id => !string.IsNullOrEmpty(id))
+                .ToList();
+        }
+
+        /// <summary>
+        /// Creates a TreeItem XElement with Name and Index attributes.
+        /// </summary>
+        private static XElement CreateTreeItemNode(string id, int index)
+        {
+            return new XElement("TreeItem",
+                new XAttribute("Name", "Node"),
+                new XElement("Attribute",
+                    new XAttribute("Name", "ID"),
+                    new XAttribute("Type", "Primitive"),
+                    new XAttribute("ValueType", "String"),
+                    new XAttribute("Value", id)
+                ),
+                new XElement("Attribute",
+                    new XAttribute("Name", "Index"),
+                    new XAttribute("Type", "Primitive"),
+                    new XAttribute("ValueType", "Int32"),
+                    new XAttribute("Value", index)
+                )
+            );
+        }
+
+        /// <summary>
+        /// Saves an XDocument to a file stream.
+        /// </summary>
+        private static void SaveXmlToFileStream(XDocument xmlDocument, DmzFile file)
+        {
+            if (xmlDocument is null || file is null) return;
+
+            var ms = new MemoryStream();
+            xmlDocument.Save(ms);
+            ms.Seek(0, SeekOrigin.Begin);
+            file.FileStream = ms;
         }
 
     }
