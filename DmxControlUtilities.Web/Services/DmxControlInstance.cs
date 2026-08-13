@@ -18,6 +18,7 @@ using static UmbraClient.PresetClient;
 using static UmbraClient.ProgrammerClient;
 using static UmbraClient.ProjectClient;
 using static UmbraClient.TimecodeClient;
+using static UmbraClient.UserClient;
 
 namespace DmxControlUtilities.Web.Services
 {
@@ -44,6 +45,7 @@ namespace DmxControlUtilities.Web.Services
         protected PresetClientClient _presetClient;
         protected ParameterClientClient _parameterClient;
         protected CuelistClientClient _cuelistClient;
+        protected UserClientClient _userClient;
 
         protected Metadata _connectionClientDataHostMetadata;
 
@@ -131,6 +133,7 @@ namespace DmxControlUtilities.Web.Services
             _presetClient = new PresetClientClient(channel);
             _parameterClient = new ParameterClientClient(channel);
             _cuelistClient = new CuelistClientClient(channel);
+            _userClient = new UserClientClient(channel);
 
             /*
             _ = Task.Run(async () =>
@@ -270,6 +273,71 @@ namespace DmxControlUtilities.Web.Services
             var result = await _timecodeClientClient.GetTimecodesAsync(request, _connectionClientDataHostMetadata);
 
             TimecodeShows = result.Timecodes.ToList();
+        }
+
+        public async Task<List<MarkerDescriptor>> GetAllMarkers()
+        {
+            var getMarkerRequest = new GetMultipleRequest
+            {
+                UserContextId = UserContextId,
+            };
+
+            var result = await _timecodeClientClient.GetMarkersAsync(getMarkerRequest, _connectionClientDataHostMetadata);
+
+            return result.Markers.ToList();
+        }
+
+        public async Task PlayAtPosition(string timecodeShowName, ulong position)
+        {
+            /*
+            var respo = await _timecodeClientClient.EditMarkerAsync(new MarkerEditRequest
+            {
+                UserContextId = UserContextId,
+                MarkerId = "INPUT_CURSOR_MARKER",
+                Parameter = "Ticks",
+                NewValueLong = (long)position,
+            }, _connectionClientDataHostMetadata);
+            */
+
+            await StopAllTimecodeShows();
+
+            await Task.Delay(200);
+
+            var ts = TimecodeShows.FirstOrDefault(t => t.Name == timecodeShowName);
+
+            if (ts == null)
+                return;
+
+            await SeekMarker(ts.Name, position);
+
+            await Task.Delay(200);
+
+            await StartTimecodeShow(ts.Name);             
+        }
+
+        public async Task SeekMarker(string timecodeShowName, ulong position)
+        {
+            /*
+            var respo = await _timecodeClientClient.EditMarkerAsync(new MarkerEditRequest
+            {
+                UserContextId = UserContextId,
+                MarkerId = "INPUT_CURSOR_MARKER",
+                Parameter = "Ticks",
+                NewValueLong = (long)position,
+            }, _connectionClientDataHostMetadata);
+            */
+
+            var ts = TimecodeShows.FirstOrDefault(t => t.Name == timecodeShowName);
+
+            if (ts == null)
+                return;
+
+            var respo2 = await _timecodeClientClient.EditMarkerAsync(new MarkerEditRequest
+            {
+                UserContextId = UserContextId,
+                MarkerId = $"{ts.Id}#Cursor",
+                NewValueLong = (long)position,
+            }, _connectionClientDataHostMetadata);
         }
 
         public async Task UpdateGroups()
@@ -422,6 +490,22 @@ namespace DmxControlUtilities.Web.Services
             var response2 = await _timecodeClientClient.TimecodeActionAsync(new LumosProtobuf.Timecode.TimecodeActionRequest
             {
                 Action = ETimecodeAction.Stop,
+                TimecodeId = ts.Id
+            }, _connectionClientDataHostMetadata);
+        }
+
+        public async Task PauseTimecodeShow(string name)
+        {
+            var ts = TimecodeShows.FirstOrDefault(t => t.Name == name);
+
+            if (ts == null)
+                return;
+
+            RunningTimecodeShows.Remove(name);
+
+            var response2 = await _timecodeClientClient.TimecodeActionAsync(new LumosProtobuf.Timecode.TimecodeActionRequest
+            {
+                Action = ETimecodeAction.Pause,
                 TimecodeId = ts.Id
             }, _connectionClientDataHostMetadata);
         }

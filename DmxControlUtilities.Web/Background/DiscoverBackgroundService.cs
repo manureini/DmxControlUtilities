@@ -63,6 +63,9 @@ namespace DmxControlUtilities.Web.Background
             if (existing.RunningTimecodeShows.Any())
                 return;
 
+            if (existing.UserContextId == null)
+                return;
+
             await existing.UpdateTimecodeshows();
             await existing.UpdateGroups();
         }

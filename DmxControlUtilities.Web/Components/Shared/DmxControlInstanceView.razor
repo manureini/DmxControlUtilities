@@ -1,32 +1,31 @@
 ﻿@using LumosProtobuf.Timecode
 
 <div>
-	@DmxControlInstance.IPEndPoint
+    @DmxControlInstance.IPEndPoint
 
-	<button @onclick="OnClickRemove">Remove</button>
+    <button @onclick="OnClickRemove">Remove</button>
 
-	<br />
+    <br />
 
-	<ul>
-		@foreach (var ts in DmxControlInstance.TimecodeShows)
-		{
-			<li>@ts.Name @(DmxControlInstance.RunningTimecodeShows.Contains(ts.Name) ? "(running)" : null)</li>
-			<button @onclick="() => OnClickStart(ts.Name)">Start</button>
-		}
-	</ul>
+    <ul>
+        @foreach (var ts in DmxControlInstance.TimecodeShows)
+        {
+            <li>
+                <a href="/timecodeshow/@DmxControlInstance.SessionId/@ts.Id">
+                    @ts.Name @(DmxControlInstance.RunningTimecodeShows.Contains(ts.Name) ? "(running)" : null)
+                </a>				
+            </li>
+
+        }
+    </ul>
 
 </div>
 
 @code {
 
-	[Parameter]
-	public DmxControlInstance DmxControlInstance { get; set; } = null!;
+    [Parameter]
+    public DmxControlInstance DmxControlInstance { get; set; } = null!;
 
-	[Parameter]
-	public EventCallback OnClickRemove { get; set; }
-
-	protected async Task OnClickStart(string tsName)
-	{
-		await DmxControlInstance.StartTimecodeShow(tsName);
-	}
+    [Parameter]
+    public EventCallback OnClickRemove { get; set; }
 }

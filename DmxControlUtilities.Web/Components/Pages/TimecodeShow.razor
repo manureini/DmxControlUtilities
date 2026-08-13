@@ -1,0 +1,101 @@
+﻿@page "/timecodeshow/{SessionId}/{TimecodeId}"
+@using LumosProtobuf.Timecode
+
+
+@inject DmxControlInstanceService InstanceService
+
+@if (_isInitialized)
+{
+    <h3>@_timecodeShow.Name</h3>
+
+    <span>@(_isRunning ? "runnig..." : string.Empty)</span>
+    <br />
+
+    <button @onclick="OnClickStart">Von Vorne</button>
+    <button @onclick="OnClickStop">Stop</button>
+
+    <br />
+    <br />
+
+    @if (_isRunning)
+    {
+        <button @onclick="OnClickPause">Pause</button>
+    }
+    else
+    {
+        <button @onclick="OnClickContinue">Weiter</button>
+    }
+
+
+    <br />
+    <br />
+    <br />
+
+    <h4>Start ab:</h4>
+
+    @foreach (var marker in _markers)
+    {
+        <div>
+            <span> @TimeSpan.FromTicks((long)marker.Ticks).ToString(@"hh\:mm\:ss") <button @onclick="() => JumpTo(marker)">@marker.Name</button> </span>
+            <br />
+            <br />
+        </div>
+    }
+}
+
+
+@code {
+
+    [Parameter]
+    public string SessionId { get; set; } = null!;
+
+    [Parameter]
+    public string TimecodeId { get; set; } = null!;
+
+    protected DmxControlInstance _instance;
+    protected TimecodeDescriptor _timecodeShow;
+    protected List<MarkerDescriptor> _markers;
+
+    protected bool _isInitialized = false;
+    protected bool _isRunning => _timecodeShow != null && _instance.RunningTimecodeShows.Contains(_timecodeShow.Name);
+
+    protected override async Task OnInitializedAsync()
+    {
+        await base.OnInitializedAsync();
+
+        _instance = InstanceService.Instances.FirstOrDefault(i => i.SessionId == SessionId) ?? throw new InvalidOperationException("Instance not found");
+        _timecodeShow = _instance.TimecodeShows.FirstOrDefault(t => t.Id == TimecodeId) ?? throw new InvalidOperationException("TimecodeShow not found");
+
+        var markers = await _instance.GetAllMarkers();
+
+        _markers = markers.Where(m => _timecodeShow.Markers.Contains(m.Id)).OrderBy(m => m.Ticks).ToList();
+
+        _isInitialized = true;
+    }
+
+    protected async Task JumpTo(MarkerDescriptor marker)
+    {
+        await _instance.PlayAtPosition(_timecodeShow.Name, marker.Ticks);
+    }
+
+    protected async Task OnClickStart()
+    {
+        await _instance.PlayAtPosition(_timecodeShow.Name, 0);
+    }
+
+    protected async Task OnClickStop()
+    {
+        await _instance.StopTimecodeShow(_timecodeShow.Name);
+        await _instance.SeekMarker(_timecodeShow.Name, 0);
+    }
+
+    protected async Task OnClickPause()
+    {
+        await _instance.PauseTimecodeShow(_timecodeShow.Name);
+    }
+
+    protected async Task OnClickContinue()
+    {
+        await _instance.StartTimecodeShow(_timecodeShow.Name);
+    }
+}
