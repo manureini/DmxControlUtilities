@@ -8,6 +8,7 @@
 @inject DmxControlUtilities.Lib.Services.LightTrackService LightTrackService
 @inject DmxControlUtilities.Lib.Services.TimecodeShowService ShowService
 @inject NavigationManager NavigationManager
+@inject IJSRuntime JSRuntime
 
 @using DmxControlUtilities.Lib.Models
 @using ShowModel = DmxControlUtilities.Lib.Models.TimecodeShow
@@ -189,6 +190,8 @@ else
 
     private System.Timers.Timer? _timer;
 
+    private DotNetObjectReference<TimecodeShowDetail>? _dotNetRef;
+
     private List<Device> _devices = new();
     private List<LightEvent> _events = new();
     private Guid _selectedDeviceId;
@@ -320,6 +323,34 @@ else
             _timer.Elapsed += (_, _) => _ = InvokeAsync(UpdatePlaybackState);
             _timer.Start();
         }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            _dotNetRef = DotNetObjectReference.Create(this);
+            await JSRuntime.InvokeVoidAsync("registerSpaceToggle", _dotNetRef);
+        }
+    }
+
+    [JSInvokable]
+    public void OnKeyPressed(string pKey, bool pCtrlKey, bool pShiftKey, bool pAltKey)
+    {
+        if (_imageDataUrl == null)
+            return;
+
+        switch (pKey)
+        {
+            case "Space" when pCtrlKey:
+                AddEvent();
+                break;
+            case "Space":
+                OnPlayPause();
+                break;
+        }
+
+        StateHasChanged();
     }
 
     private void RefreshDevices()
@@ -608,5 +639,8 @@ else
     {
         _timer?.Stop();
         _timer?.Dispose();
+
+        _ = JSRuntime.InvokeVoidAsync("unregisterSpaceToggle");
+        _dotNetRef?.Dispose();
     }
 }
