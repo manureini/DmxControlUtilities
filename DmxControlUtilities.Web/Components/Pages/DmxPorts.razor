@@ -19,10 +19,13 @@
     <div class="alert alert-danger">@mError</div>
 }
 
-<MGrid T="PortInfo" DataSource="mPorts" EnableAdding="false" EnableEditing="false" EnableDeleting="false" EnableFilterRow="false" EnableGrouping="false" EnableExport="false" EnableImport="false" EnableSaveState="false">
-    <MGridColumn Property="@nameof(PortInfo.Name)" HeaderText="Port" PropertyType="typeof(string)" />
+<MGrid T="SerialPortInfo" DataSource="mPorts" EnableAdding="false" EnableEditing="false" EnableDeleting="false" EnableFilterRow="false" EnableGrouping="false" EnableExport="false" EnableImport="false" EnableSaveState="false">
+    <MGridColumn Property="@nameof(SerialPortInfo.Name)" HeaderText="Port" PropertyType="typeof(string)" />
+    <MGridColumn Property="@nameof(SerialPortInfo.Description)" HeaderText="Description" PropertyType="typeof(string)" />
+    <MGridColumn Property="@nameof(SerialPortInfo.SerialNumber)" HeaderText="Serial" PropertyType="typeof(string)" />
+    <MGridColumn Property="@nameof(SerialPortInfo.DeviceId)" HeaderText="PNP Device ID" PropertyType="typeof(string)" />
 
-    <MGridComplexColumn T="PortInfo" Identifier="Select" HeaderText="">
+    <MGridComplexColumn T="SerialPortInfo" Identifier="Select" HeaderText="">
         <CellTemplate Context="port">
             <button class="btn btn-primary btn-sm" @onclick="() => SelectPort(port)">Select</button>
         </CellTemplate>
@@ -33,12 +36,7 @@
 
 @code {
 
-    public class PortInfo
-    {
-        public string Name { get; set; } = string.Empty;
-    }
-
-    protected List<PortInfo> mPorts = new();
+    protected List<SerialPortInfo> mPorts = new();
     protected string? mSelectedPort;
     protected string? mError;
 
@@ -49,13 +47,10 @@
 
     protected void Refresh()
     {
-        mPorts = DmxFtdiService.GetPortNames()
-            .OrderBy(p => p)
-            .Select(p => new PortInfo { Name = p })
-            .ToList();
+        mPorts = SerialPortEnumerator.GetPorts().ToList();
     }
 
-    protected void SelectPort(PortInfo pPort)
+    protected void SelectPort(SerialPortInfo pPort)
     {
         mError = null;
 
