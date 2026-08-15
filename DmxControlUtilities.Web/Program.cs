@@ -24,6 +24,8 @@ namespace DmxControlUtilities.Web
             builder.Services.AddSingleton<FixtureService>();
             builder.Services.AddSingleton<AudioVolumeService>();
             builder.Services.AddSingleton<TrackerLocationService>();
+            builder.Services.AddSingleton<AudioSpectrogramService>();
+            builder.Services.AddSingleton<AudioPlaybackService>();
 
             builder.Services.AddHostedService<DiscoverBackgroundService>();
 
