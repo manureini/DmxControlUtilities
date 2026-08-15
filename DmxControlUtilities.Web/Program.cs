@@ -26,6 +26,8 @@ namespace DmxControlUtilities.Web
             builder.Services.AddSingleton<TrackerLocationService>();
             builder.Services.AddSingleton<AudioSpectrogramService>();
             builder.Services.AddSingleton<AudioPlaybackService>();
+            builder.Services.AddSingleton<DmxControlUtilities.Lib.Services.DmxFtdiService>();
+            builder.Services.AddSingleton<DmxControlUtilities.Lib.Services.DeviceService>();
 
             builder.Services.AddHostedService<DiscoverBackgroundService>();
 
@@ -35,6 +37,7 @@ namespace DmxControlUtilities.Web
                 o.RegisterStringLocalizer = true;
                 o.RegisterResourceLocalizer = true;
                 o.RegisterNavigation = true;
+                o.RegisterTimezoneService = true;
 
             });
 

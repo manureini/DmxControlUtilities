@@ -1,0 +1,67 @@
+@page "/devices"
+
+@using DmxControlUtilities.Lib.Models
+@using DmxControlUtilities.Lib.Services
+@using MComponents.MGrid
+
+@inject DeviceService DeviceService
+@inject NavigationManager NavigationManager
+
+<PageTitle>Devices</PageTitle>
+
+<h3>Devices</h3>
+
+<button class="btn btn-primary mb-2" @onclick="AddDevice">+</button>
+
+<MGrid T="Device" DataSource="mDevices" EnableAdding="false" EnableEditing="false" EnableDeleting="false" EnableFilterRow="false" EnableGrouping="false" EnableExport="false" EnableImport="false" EnableSaveState="false">
+    <MGridColumn Property="@nameof(Device.Name)" HeaderText="Name" PropertyType="typeof(string)" />
+    <MGridColumn Property="@nameof(Device.Channel)" HeaderText="Channel" PropertyType="typeof(int)" />
+    <MGridColumn Property="@nameof(Device.R)" HeaderText="R" PropertyType="typeof(byte)" />
+    <MGridColumn Property="@nameof(Device.G)" HeaderText="G" PropertyType="typeof(byte)" />
+    <MGridColumn Property="@nameof(Device.B)" HeaderText="B" PropertyType="typeof(byte)" />
+
+    <MGridComplexColumn T="Device" Identifier="Actions" HeaderText="">
+        <CellTemplate Context="device">
+            <button class="btn btn-primary btn-sm" @onclick="() => EditDevice(device)">Edit</button>
+            <button class="btn btn-danger btn-sm" @onclick="() => RemoveDevice(device)">Delete</button>
+        </CellTemplate>
+    </MGridComplexColumn>
+</MGrid>
+
+@code {
+
+    protected List<Device> mDevices = new();
+
+    protected override void OnInitialized()
+    {
+        Refresh();
+    }
+
+    protected void Refresh()
+    {
+        mDevices = DeviceService.Devices.ToList();
+    }
+
+    protected void AddDevice()
+    {
+        var device = new Device
+        {
+            Name = "Device " + (DeviceService.Devices.Count + 1)
+        };
+
+        DeviceService.AddDevice(device);
+
+        NavigationManager.NavigateTo("devices/" + device.Id);
+    }
+
+    protected void EditDevice(Device pDevice)
+    {
+        NavigationManager.NavigateTo("devices/" + pDevice.Id);
+    }
+
+    protected void RemoveDevice(Device pDevice)
+    {
+        DeviceService.RemoveDevice(pDevice);
+        Refresh();
+    }
+}

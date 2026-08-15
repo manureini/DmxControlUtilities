@@ -1,0 +1,89 @@
+@page "/devices/{Id:guid}"
+
+@using DmxControlUtilities.Lib.Models
+@using DmxControlUtilities.Lib.Services
+
+@inject DeviceService DeviceService
+@inject NavigationManager NavigationManager
+
+<PageTitle>Device</PageTitle>
+
+@if (mDevice == null)
+{
+    <p>Device not found.</p>
+}
+else
+{
+    <h3>Device</h3>
+
+    <div class="mb-3">
+        <label class="form-label">Name</label>
+        <input class="form-control" @bind="mDevice.Name" />
+    </div>
+
+    <div class="mb-3">
+        <label class="form-label">Channel (1 - 510)</label>
+        <input type="number" min="1" max="510" class="form-control" value="@mDevice.Channel" @onchange="OnChannelChanged" />
+    </div>
+
+    <div class="mb-3">
+        <label class="form-label">Red: @mDevice.R</label>
+        <input type="range" min="0" max="255" step="1" class="form-range" value="@mDevice.R" @oninput="e => OnColorChanged(c => c.R = ParseByte(e), e)" />
+    </div>
+
+    <div class="mb-3">
+        <label class="form-label">Green: @mDevice.G</label>
+        <input type="range" min="0" max="255" step="1" class="form-range" value="@mDevice.G" @oninput="e => OnColorChanged(c => c.G = ParseByte(e), e)" />
+    </div>
+
+    <div class="mb-3">
+        <label class="form-label">Blue: @mDevice.B</label>
+        <input type="range" min="0" max="255" step="1" class="form-range" value="@mDevice.B" @oninput="e => OnColorChanged(c => c.B = ParseByte(e), e)" />
+    </div>
+
+    <button class="btn btn-secondary" @onclick="Back">Back</button>
+}
+
+@code {
+
+    [Parameter]
+    public Guid Id { get; set; }
+
+    protected Device? mDevice;
+
+    protected override void OnParametersSet()
+    {
+        mDevice = DeviceService.GetDevice(Id);
+    }
+
+    protected static byte ParseByte(ChangeEventArgs pArgs)
+    {
+        return byte.TryParse(pArgs.Value?.ToString(), out var value) ? value : (byte)0;
+    }
+
+    protected void OnChannelChanged(ChangeEventArgs pArgs)
+    {
+        if (mDevice == null)
+            return;
+
+        if (int.TryParse(pArgs.Value?.ToString(), out var channel) && channel >= 1 && channel <= 510)
+        {
+            mDevice.Channel = channel;
+            DeviceService.ApplyDevice(mDevice);
+        }
+    }
+
+    protected void OnColorChanged(Action<Device> pSetValue, ChangeEventArgs pArgs)
+    {
+        if (mDevice == null)
+            return;
+
+        pSetValue(mDevice);
+        DeviceService.ApplyDevice(mDevice);
+    }
+
+    protected void Back()
+    {
+        NavigationManager.NavigateTo("devices");
+    }
+}

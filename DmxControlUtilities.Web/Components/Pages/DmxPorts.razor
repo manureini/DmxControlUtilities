@@ -1,0 +1,73 @@
+@page "/dmxports"
+
+@using DmxControlUtilities.Lib.Services
+@using MComponents.MGrid
+
+@inject DmxFtdiService DmxService
+
+<PageTitle>DMX Ports</PageTitle>
+
+<h3>DMX Ports</h3>
+
+<p>
+    Current port: <b>@(string.IsNullOrEmpty(mSelectedPort) ? "-" : mSelectedPort)</b>
+    (@(DmxService.IsOpen ? "connected" : "not connected"))
+</p>
+
+@if (!string.IsNullOrEmpty(mError))
+{
+    <div class="alert alert-danger">@mError</div>
+}
+
+<MGrid T="PortInfo" DataSource="mPorts" EnableAdding="false" EnableEditing="false" EnableDeleting="false" EnableFilterRow="false" EnableGrouping="false" EnableExport="false" EnableImport="false" EnableSaveState="false">
+    <MGridColumn Property="@nameof(PortInfo.Name)" HeaderText="Port" PropertyType="typeof(string)" />
+
+    <MGridComplexColumn T="PortInfo" Identifier="Select" HeaderText="">
+        <CellTemplate Context="port">
+            <button class="btn btn-primary btn-sm" @onclick="() => SelectPort(port)">Select</button>
+        </CellTemplate>
+    </MGridComplexColumn>
+</MGrid>
+
+<button class="btn btn-secondary mt-2" @onclick="Refresh">Refresh</button>
+
+@code {
+
+    public class PortInfo
+    {
+        public string Name { get; set; } = string.Empty;
+    }
+
+    protected List<PortInfo> mPorts = new();
+    protected string? mSelectedPort;
+    protected string? mError;
+
+    protected override void OnInitialized()
+    {
+        Refresh();
+    }
+
+    protected void Refresh()
+    {
+        mPorts = DmxFtdiService.GetPortNames()
+            .OrderBy(p => p)
+            .Select(p => new PortInfo { Name = p })
+            .ToList();
+    }
+
+    protected void SelectPort(PortInfo pPort)
+    {
+        mError = null;
+
+        try
+        {
+            DmxService.Open(pPort.Name);
+            mSelectedPort = pPort.Name;
+        }
+        catch (Exception e)
+        {
+            mError = e.Message;
+            mSelectedPort = null;
+        }
+    }
+}

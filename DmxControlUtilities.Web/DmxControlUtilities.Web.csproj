@@ -15,6 +15,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\..\..\..\..\GitHub\MComponents\MComponents\MComponents.csproj" />
+    <ProjectReference Include="..\DmxControlUtilities.Lib\DmxControlUtilities.Lib.csproj" />
     <ProjectReference Include="..\DMXControl3-Network-Interface\csharp\LumosProtobuf.csproj" />
   </ItemGroup>
 

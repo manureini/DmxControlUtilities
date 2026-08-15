@@ -1,0 +1,81 @@
+@page "/channels"
+
+@using DmxControlUtilities.Lib.Services
+
+@inject DmxFtdiService DmxService
+
+<PageTitle>Channels</PageTitle>
+
+<h3>DMX Channels</h3>
+
+<div class="channel-grid">
+    @for (int i = 1; i <= 512; i++)
+    {
+        var channel = i;
+
+        <div class="channel-box">
+            <div class="channel-header">@channel</div>
+
+            <input type="range"
+                   min="0"
+                   max="255"
+                   step="1"
+                   value="@mValues[channel]"
+                   @oninput="e => OnValueChanged(channel, e)" />
+
+            <div class="channel-value">@mValues[channel]</div>
+        </div>
+    }
+</div>
+
+<style>
+    .channel-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(70px, 1fr));
+        gap: 6px;
+    }
+
+    .channel-box {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+        padding: 4px;
+    }
+
+    .channel-header {
+        font-size: 0.75rem;
+        color: #666;
+    }
+
+    .channel-box input[type=range] {
+        width: 100%;
+    }
+
+    .channel-value {
+        font-weight: bold;
+    }
+</style>
+
+@code {
+
+    protected byte[] mValues = new byte[513];
+
+    protected override void OnInitialized()
+    {
+        for (int i = 1; i <= 512; i++)
+        {
+            mValues[i] = DmxService.GetChannel(i);
+        }
+    }
+
+    protected void OnValueChanged(int pChannel, ChangeEventArgs pArgs)
+    {
+        if (!byte.TryParse(pArgs.Value?.ToString(), out var value))
+            return;
+
+        mValues[pChannel] = value;
+        DmxService.SetChannel(pChannel, value);
+    }
+}
