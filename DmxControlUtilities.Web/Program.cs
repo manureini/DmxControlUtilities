@@ -28,6 +28,8 @@ namespace DmxControlUtilities.Web
             builder.Services.AddSingleton<AudioPlaybackService>();
             builder.Services.AddSingleton<DmxControlUtilities.Lib.Services.DmxFtdiService>();
             builder.Services.AddSingleton<DmxControlUtilities.Lib.Services.DeviceService>();
+            builder.Services.AddSingleton<DmxControlUtilities.Lib.Services.LightTrackService>();
+            builder.Services.AddSingleton<DmxControlUtilities.Lib.Services.TimecodeShowService>();
 
             builder.Services.AddHostedService<DiscoverBackgroundService>();
 

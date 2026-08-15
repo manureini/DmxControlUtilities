@@ -6,7 +6,7 @@ namespace DmxControlUtilities.Web.Services
     {
         private readonly object _lock = new();
 
-        private AudioFileReader? _reader;
+        private WaveStream? _reader;
         private WaveOutEvent? _output;
 
         public TimeSpan Duration
@@ -42,13 +42,20 @@ namespace DmxControlUtilities.Web.Services
             }
         }
 
-        public void Load(string pFilePath)
+        /// <summary>
+        /// Loads audio from a stream for playback using Media Foundation. The stream is not
+        /// disposed by this service and must remain open and readable for the lifetime of playback.
+        /// </summary>
+        public void Load(Stream pAudioStream)
         {
+            if (pAudioStream.CanSeek)
+                pAudioStream.Position = 0;
+
             lock (_lock)
             {
                 DisposePlayback();
 
-                _reader = new AudioFileReader(pFilePath);
+                _reader = new StreamMediaFoundationReader(pAudioStream);
                 _output = new WaveOutEvent();
                 _output.Init(_reader);
             }

@@ -1,0 +1,612 @@
+@page "/shows/{Id:guid}"
+
+@implements IDisposable
+
+@inject AudioSpectrogramService SpectrogramService
+@inject AudioPlaybackService PlaybackService
+@inject DmxControlUtilities.Lib.Services.DeviceService DeviceService
+@inject DmxControlUtilities.Lib.Services.LightTrackService LightTrackService
+@inject DmxControlUtilities.Lib.Services.TimecodeShowService ShowService
+@inject NavigationManager NavigationManager
+
+@using DmxControlUtilities.Lib.Models
+@using ShowModel = DmxControlUtilities.Lib.Models.TimecodeShow
+
+<PageTitle>Timecode Show</PageTitle>
+
+@if (_show == null)
+{
+    <p>Show not found.</p>
+}
+else
+{
+    <h3>Timecode Show</h3>
+
+    <div class="mb-2" style="display: flex; gap: 0.5rem; align-items: center;">
+        <button class="btn btn-secondary btn-sm" @onclick="@(() => NavigationManager.NavigateTo("shows"))">Back</button>
+        <input class="form-control" style="width: auto;" @bind="_show.Name" />
+    </div>
+
+    <InputFile OnChange="OnFileSelected" accept=".mp3,.wav,audio/*" />
+
+    @if (_errorMessage != null)
+    {
+        <p style="color: red;">@_errorMessage</p>
+    }
+
+    @if (_imageDataUrl != null)
+    {
+        <div style="margin-top: 1rem;">
+            <p>@_fileName</p>
+
+            <div style="margin-bottom: 0.5rem;">
+                <button class="btn btn-primary" @onclick="OnPlayPause" title="@(_isPlaying ? "Pause" : "Play")">
+                    @if (_isPlaying)
+                    {
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16" style="vertical-align: -0.125em;">
+                            <path d="M5.5 3.5A1.5 1.5 0 0 1 7 5v6a1.5 1.5 0 0 1-3 0V5a1.5 1.5 0 0 1 1.5-1.5zm5 0A1.5 1.5 0 0 1 12 5v6a1.5 1.5 0 0 1-3 0V5a1.5 1.5 0 0 1 1.5-1.5z" />
+                        </svg>
+                    }
+                    else
+                    {
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16" style="vertical-align: -0.125em;">
+                            <path d="m11.596 8.697-6.363 3.692c-.54.313-1.233-.066-1.233-.697V4.308c0-.63.692-1.01 1.233-.696l6.363 3.692a.802.802 0 0 1 0 1.393z" />
+                        </svg>
+                    }
+                </button>
+                <button class="btn btn-secondary" @onclick="OnStop" title="Stop">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16" style="vertical-align: -0.125em;">
+                        <path d="M5 3.5h6A1.5 1.5 0 0 1 12.5 5v6a1.5 1.5 0 0 1-1.5 1.5H5A1.5 1.5 0 0 1 3.5 11V5A1.5 1.5 0 0 1 5 3.5z" />
+                    </svg>
+                </button>
+                <span style="margin-left: 1rem;">@FormatTime(_position) / @FormatTime(_duration)</span>
+            </div>
+
+            <div style="width: 88vw; box-sizing: border-box; overflow: hidden; border: 1px solid #ccc; border-radius: 6px; padding: 1rem; background-color: #fff;">
+            <div style="display: flex; gap: 1rem; align-items: flex-start; width: 100%;">
+                <div style="flex: 0 0 220px; border: 1px solid #ccc; border-radius: 6px; padding: 1rem;">
+                    <h6>Image Settings</h6>
+
+                    <label for="threshold" style="display: block; margin-top: 0.5rem;">Threshold: @_threshold.ToString("0.00")</label>
+                    <input id="threshold" type="range" min="0" max="0.9" step="0.01" style="width: 100%;"
+                           @bind="_threshold" @bind:event="oninput" @bind:after="RegenerateImage" @bind:culture="System.Globalization.CultureInfo.InvariantCulture" />
+                    <div style="display: flex; justify-content: space-between; font-size: 0.75rem; color: #888;"><span>0</span><span>0.9</span></div>
+
+                    <label for="ratio" style="display: block; margin-top: 0.5rem;">Ratio: @_ratio.ToString("0.00")</label>
+                    <input id="ratio" type="range" min="0.25" max="4" step="0.05" style="width: 100%;"
+                           @bind="_ratio" @bind:event="oninput" @bind:after="RegenerateImage" @bind:culture="System.Globalization.CultureInfo.InvariantCulture" />
+                    <div style="display: flex; justify-content: space-between; font-size: 0.75rem; color: #888;"><span>0.25</span><span>4</span></div>
+
+                    <label for="bandwidth" style="display: block; margin-top: 0.5rem;">Bandwidth: @_bandwidth.ToString("0.00")</label>
+                    <input id="bandwidth" type="range" min="1" max="3" step="0.05" style="width: 100%;"
+                           @bind="_bandwidth" @bind:event="oninput" @bind:after="RegenerateImage" @bind:culture="System.Globalization.CultureInfo.InvariantCulture" />
+                    <div style="display: flex; justify-content: space-between; font-size: 0.75rem; color: #888;"><span>1</span><span>3</span></div>
+                </div>
+
+                <div style="flex: 1 1 0; min-width: 0; max-width: 100%; overflow: hidden;">
+                    <div style="overflow-x: auto; overflow-y: hidden; border: 1px solid #ccc; border-radius: 6px; padding: 8px; background-color: #fff;">
+                    <div style="position: relative; width: @(DisplayWidth.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture))px; height: 512px; cursor: crosshair; user-select: none;"
+                         @onmousedown="OnCursorMouseDown"
+                         @onmousemove="OnCursorMouseMove"
+                         @onmouseup="OnCursorMouseUp"
+                         @onmouseleave="OnCursorMouseUp"
+                         @onwheel="OnWheel"
+                         @onwheel:preventDefault="true">
+                        <img src="@_imageDataUrl"
+                             style="width: @(DisplayWidth.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture))px; height: 512px; display: block; pointer-events: none;"
+                             draggable="false"
+                             alt="Spectrogram" />
+                        <div style="position: absolute; top: 0; bottom: 0; left: @(CursorX.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture))px; width: 2px; background-color: red; pointer-events: none;"></div>
+                    </div>
+
+                    <div style="position: relative; width: @(DisplayWidth.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture))px; height: 40px; margin-top: 4px; border: 1px solid #ccc; border-radius: 4px; background-color: #f5f5f5; user-select: none;"
+                         @onmousemove="OnEventMouseMove"
+                         @onmouseup="OnEventMouseUp"
+                         @onmouseleave="OnEventMouseUp">
+                        @foreach (var lightEvent in _events)
+                        {
+                            var evt = lightEvent;
+
+                            <div title="@GetDeviceName(evt.DeviceId) @FormatTime(evt.Time)"
+                                 style="position: absolute; top: 4px; bottom: 4px; width: 10px; margin-left: -5px; border: 1px solid @(_selectedEvent?.Id == evt.Id ? "#000" : "#333"); border-radius: 2px; cursor: ew-resize; left: @(EventX(evt).ToString("0.##", System.Globalization.CultureInfo.InvariantCulture))px; background-color: @evt.ColorHex; @(_draggingEvent != null ? "pointer-events: none;" : string.Empty)"
+                                 @onmousedown="e => OnEventMouseDown(evt, e)"
+                                 @onmousedown:preventDefault="true"></div>
+                        }
+
+                        <div style="position: absolute; top: 0; bottom: 0; left: @(CursorX.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture))px; width: 2px; background-color: red; pointer-events: none;"></div>
+                    </div>
+                    </div>
+
+                    <div style="margin-top: 0.5rem; display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+                        <button class="btn btn-primary" @onclick="AddEvent" title="Add event at current position">+</button>
+
+                        <select class="form-select" style="width: auto;" @bind="_selectedDeviceId">
+                            @foreach (var device in _devices)
+                            {
+                                <option value="@device.Id">@device.Name (Ch @device.Channel)</option>
+                            }
+                        </select>
+
+                        <input type="color" class="form-control form-control-color" @bind="_selectedColor" />
+
+                        <span>at @FormatTime(_position)</span>
+                    </div>
+
+                    @if (_selectedEvent != null)
+                    {
+                        <div style="margin-top: 0.5rem; display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+                            <span>Event @FormatTime(_selectedEvent.Time) - @GetDeviceName(_selectedEvent.DeviceId)</span>
+
+                            <input type="color" class="form-control form-control-color"
+                                   value="@_selectedEvent.ColorHex"
+                                   @onchange="OnSelectedEventColorChanged" />
+
+                            <button class="btn btn-danger btn-sm" @onclick="RemoveSelectedEvent">Delete</button>
+                            <button class="btn btn-secondary btn-sm" @onclick="() => _selectedEvent = null">Close</button>
+                        </div>
+                    }
+                </div>
+            </div>
+            </div>
+        </div>
+    }
+
+    @if (_isProcessing)
+    {
+        <p>Analyzing audio file...</p>
+    }
+}
+
+@code {
+
+    [Parameter]
+    public Guid Id { get; set; }
+
+    private ShowModel? _show;
+
+    private const long MaxFileSize = 200 * 1024 * 1024;
+
+    private bool _isProcessing;
+    private string? _errorMessage;
+    private string? _imageDataUrl;
+    private string? _fileName;
+
+    private double _threshold = 0;
+    private double _ratio = 1;
+    private double _bandwidth = 2;
+    private int _regenerateVersion;
+
+    private int _imageWidth;
+    private int _baseWidth;
+    private double _zoom = 1;
+    private double _renderZoom = 1;
+    private long _zoomVersion;
+    private bool _isPlaying;
+    private bool _isDragging;
+
+    private TimeSpan _duration;
+    private TimeSpan _position;
+
+    private System.Timers.Timer? _timer;
+
+    private List<Device> _devices = new();
+    private List<LightEvent> _events = new();
+    private Guid _selectedDeviceId;
+    private string _selectedColor = "#ffffff";
+    private LightEvent? _selectedEvent;
+    private LightEvent? _draggingEvent;
+
+    private double CursorX => _duration > TimeSpan.Zero
+        ? _position.TotalSeconds / _duration.TotalSeconds * DisplayWidth
+        : 0;
+
+    private double EventX(LightEvent pEvent) => _duration > TimeSpan.Zero
+        ? pEvent.Time.TotalSeconds / _duration.TotalSeconds * DisplayWidth
+        : 0;
+
+    private const int BaseMaxWidth = 2000;
+
+    private double DisplayWidth => _baseWidth * _zoom;
+
+    private void OnWheel(WheelEventArgs pArgs)
+    {
+        if (_baseWidth <= 0)
+            return;
+
+        double factor = pArgs.DeltaY < 0 ? 1.2 : 1 / 1.2;
+
+        _zoom = Math.Clamp(_zoom * factor, 1, 50);
+
+        RegenerateZoomImage();
+    }
+
+    /// <summary>
+    /// Recalculates the spectrogram in the background with a time resolution matching the current zoom level.
+    /// </summary>
+    private void RegenerateZoomImage()
+    {
+        var audioStream = _show?.AudioFilePath;
+
+        if (audioStream == null)
+            return;
+
+        double targetZoom = Math.Clamp(Math.Pow(2, Math.Ceiling(Math.Log2(_zoom))), 1, 16);
+
+        if (Math.Abs(targetZoom - _renderZoom) < 0.01)
+            return;
+
+        long version = Interlocked.Increment(ref _zoomVersion);
+
+        _ = Task.Run(async () =>
+        {
+            await Task.Delay(250);
+
+            if (version != _zoomVersion)
+                return;
+
+            double threshold = _threshold;
+            double ratio = _ratio;
+            double bandwidth = _bandwidth;
+
+            try
+            {
+                var bmp = SpectrogramService.CreateSpectrogramBmp(audioStream,
+                    pMaxWidth: (int)(BaseMaxWidth * targetZoom),
+                    pThreshold: threshold, pRatio: ratio, pBandwidth: bandwidth);
+
+                if (version != _zoomVersion)
+                    return;
+
+                await InvokeAsync(() =>
+                {
+                    _imageWidth = BitConverter.ToInt32(bmp, 18);
+                    _renderZoom = targetZoom;
+                    _baseWidth = (int)(_imageWidth / targetZoom);
+                    _imageDataUrl = "data:image/bmp;base64," + Convert.ToBase64String(bmp);
+                    StateHasChanged();
+                });
+            }
+            catch (Exception ex)
+            {
+                await InvokeAsync(() =>
+                {
+                    _errorMessage = "Error processing file: " + ex.Message;
+                    StateHasChanged();
+                });
+            }
+        });
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _show = ShowService.GetShow(Id);
+
+        if (_show == null)
+            return;
+
+        LightTrackService.SetShow(_show);
+
+        _threshold = _show.Threshold;
+        _ratio = _show.Ratio;
+        _bandwidth = _show.Bandwidth;
+        _fileName = _show.AudioFileName;
+
+        RefreshDevices();
+        _events = LightTrackService.Events.ToList();
+
+        if (_show.AudioFilePath != null && _imageDataUrl == null)
+        {
+            try
+            {
+                await GenerateImage();
+
+                if (_show.AudioFilePath != null)
+                {
+                    PlaybackService.Load(_show.AudioFilePath);
+                }
+
+                _duration = PlaybackService.Duration;
+                _position = TimeSpan.Zero;
+            }
+            catch (Exception ex)
+            {
+                _errorMessage = "Error processing file: " + ex.Message;
+            }
+        }
+
+        if (_timer == null)
+        {
+            _timer = new System.Timers.Timer(100);
+            _timer.Elapsed += (_, _) => _ = InvokeAsync(UpdatePlaybackState);
+            _timer.Start();
+        }
+    }
+
+    private void RefreshDevices()
+    {
+        _devices = DeviceService.Devices.ToList();
+
+        if (_selectedDeviceId == Guid.Empty || _devices.All(d => d.Id != _selectedDeviceId))
+        {
+            _selectedDeviceId = _devices.FirstOrDefault()?.Id ?? Guid.Empty;
+        }
+    }
+
+    private string GetDeviceName(Guid pDeviceId)
+    {
+        return _devices.FirstOrDefault(d => d.Id == pDeviceId)?.Name ?? "?";
+    }
+
+    private void AddEvent()
+    {
+        if (_selectedDeviceId == Guid.Empty)
+            return;
+
+        var lightEvent = new LightEvent
+        {
+            DeviceId = _selectedDeviceId,
+            Time = _position,
+            ColorHex = _selectedColor
+        };
+
+        LightTrackService.AddEvent(lightEvent);
+        _events = LightTrackService.Events.ToList();
+        _selectedEvent = lightEvent;
+    }
+
+    private void SelectEvent(LightEvent pEvent)
+    {
+        _selectedEvent = pEvent;
+    }
+
+    private void OnEventMouseDown(LightEvent pEvent, MouseEventArgs pArgs)
+    {
+        _selectedEvent = pEvent;
+        _draggingEvent = pEvent;
+    }
+
+    private void OnEventMouseMove(MouseEventArgs pArgs)
+    {
+        if (_draggingEvent == null)
+            return;
+
+        _draggingEvent.Time = PositionFromOffset(pArgs.OffsetX);
+        _events = LightTrackService.Events.ToList();
+    }
+
+    private void OnEventMouseUp(MouseEventArgs pArgs)
+    {
+        if (_draggingEvent == null)
+            return;
+
+        _draggingEvent.Time = PositionFromOffset(pArgs.OffsetX);
+        _draggingEvent = null;
+
+        _events = LightTrackService.Events.ToList();
+        LightTrackService.Reset();
+    }
+
+    private void OnSelectedEventColorChanged(ChangeEventArgs pArgs)
+    {
+        if (_selectedEvent == null)
+            return;
+
+        _selectedEvent.ColorHex = pArgs.Value?.ToString() ?? _selectedEvent.ColorHex;
+        _events = LightTrackService.Events.ToList();
+    }
+
+    private void RemoveSelectedEvent()
+    {
+        if (_selectedEvent == null)
+            return;
+
+        LightTrackService.RemoveEvent(_selectedEvent);
+        _selectedEvent = null;
+        _events = LightTrackService.Events.ToList();
+    }
+
+    private void UpdatePlaybackState()
+    {
+        if (_imageDataUrl == null)
+            return;
+
+        _isPlaying = PlaybackService.IsPlaying;
+
+        if (!_isDragging)
+        {
+            _position = PlaybackService.Position;
+        }
+
+        if (_isPlaying)
+        {
+            LightTrackService.UpdatePosition(_position);
+        }
+
+        StateHasChanged();
+    }
+
+    private async Task GenerateImage()
+    {
+        var audioStream = _show?.AudioFilePath;
+
+        if (audioStream == null)
+            return;
+
+        double renderZoom = _renderZoom;
+
+        var bmp = await Task.Run(() => SpectrogramService.CreateSpectrogramBmp(audioStream,
+            pMaxWidth: (int)(BaseMaxWidth * renderZoom),
+            pThreshold: _threshold, pRatio: _ratio, pBandwidth: _bandwidth));
+
+        _imageWidth = BitConverter.ToInt32(bmp, 18);
+        _baseWidth = (int)(_imageWidth / renderZoom);
+        _imageDataUrl = "data:image/bmp;base64," + Convert.ToBase64String(bmp);
+    }
+
+    private void RegenerateImage()
+    {
+        var audioStream = _show?.AudioFilePath;
+
+        if (audioStream == null)
+            return;
+
+        if (_show != null)
+        {
+            _show.Threshold = _threshold;
+            _show.Ratio = _ratio;
+            _show.Bandwidth = _bandwidth;
+        }
+
+        int version = Interlocked.Increment(ref _regenerateVersion);
+
+        _ = Task.Run(async () =>
+        {
+            await Task.Delay(150);
+
+            if (version != _regenerateVersion)
+                return;
+
+            double threshold = _threshold;
+            double ratio = _ratio;
+            double bandwidth = _bandwidth;
+            double renderZoom = _renderZoom;
+
+            try
+            {
+                var bmp = SpectrogramService.CreateSpectrogramBmp(audioStream,
+                    pMaxWidth: (int)(BaseMaxWidth * renderZoom),
+                    pThreshold: threshold, pRatio: ratio, pBandwidth: bandwidth);
+
+                if (version != _regenerateVersion)
+                    return;
+
+                await InvokeAsync(() =>
+                {
+                    _imageWidth = BitConverter.ToInt32(bmp, 18);
+                    _baseWidth = (int)(_imageWidth / renderZoom);
+                    _imageDataUrl = "data:image/bmp;base64," + Convert.ToBase64String(bmp);
+                    StateHasChanged();
+                });
+            }
+            catch (Exception ex)
+            {
+                await InvokeAsync(() =>
+                {
+                    _errorMessage = "Error processing file: " + ex.Message;
+                    StateHasChanged();
+                });
+            }
+        });
+    }
+
+    private async Task OnFileSelected(InputFileChangeEventArgs pArgs)
+    {
+        _errorMessage = null;
+        _imageDataUrl = null;
+        _isProcessing = true;
+        _fileName = pArgs.File.Name;
+
+        PlaybackService.Stop();
+
+        try
+        {
+            var audioStream = new MemoryStream();
+
+            await pArgs.File.OpenReadStream(MaxFileSize).CopyToAsync(audioStream);
+
+            audioStream.Position = 0;
+
+            if (_show != null)
+            {
+                _show.AudioFileName = _fileName ?? string.Empty;
+                _show.AudioFilePath?.Dispose();
+                _show.AudioFilePath = audioStream;
+            }
+
+            await GenerateImage();
+
+            PlaybackService.Load(audioStream);
+            _duration = PlaybackService.Duration;
+            _position = TimeSpan.Zero;
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = "Error processing file: " + ex.Message;
+        }
+        finally
+        {
+            _isProcessing = false;
+        }
+    }
+
+    private void OnPlayPause()
+    {
+        if (PlaybackService.IsPlaying)
+        {
+            PlaybackService.Pause();
+        }
+        else
+        {
+            RefreshDevices();
+            LightTrackService.Reset();
+            PlaybackService.Play();
+        }
+
+        _isPlaying = PlaybackService.IsPlaying;
+    }
+
+    private void OnStop()
+    {
+        PlaybackService.Stop();
+        LightTrackService.Reset();
+        _isPlaying = false;
+        _position = TimeSpan.Zero;
+    }
+
+    private void OnCursorMouseDown(MouseEventArgs pArgs)
+    {
+        _isDragging = true;
+        _position = PositionFromOffset(pArgs.OffsetX);
+    }
+
+    private void OnCursorMouseMove(MouseEventArgs pArgs)
+    {
+        if (!_isDragging)
+            return;
+
+        _position = PositionFromOffset(pArgs.OffsetX);
+    }
+
+    private void OnCursorMouseUp(MouseEventArgs pArgs)
+    {
+        if (!_isDragging)
+            return;
+
+        _isDragging = false;
+        _position = PositionFromOffset(pArgs.OffsetX);
+        PlaybackService.Seek(_position);
+        LightTrackService.Reset();
+
+        LightTrackService.UpdatePosition(_position);
+    }
+
+    private TimeSpan PositionFromOffset(double pOffsetX)
+    {
+        if (DisplayWidth <= 0)
+            return TimeSpan.Zero;
+
+        double fraction = Math.Clamp(pOffsetX / DisplayWidth, 0, 1);
+        return TimeSpan.FromSeconds(fraction * _duration.TotalSeconds);
+    }
+
+    private static string FormatTime(TimeSpan pTime)
+    {
+        return pTime.ToString(@"mm\:ss\.f");
+    }
+
+    public void Dispose()
+    {
+        _timer?.Stop();
+        _timer?.Dispose();
+    }
+}

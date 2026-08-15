@@ -1,0 +1,71 @@
+@page "/shows"
+
+@using DmxControlUtilities.Lib.Models
+@using DmxControlUtilities.Lib.Services
+@using MComponents.MGrid
+@using ShowModel = DmxControlUtilities.Lib.Models.TimecodeShow
+
+@inject TimecodeShowService ShowService
+@inject NavigationManager NavigationManager
+
+<PageTitle>Shows</PageTitle>
+
+<h3>Timecode Shows</h3>
+
+<button class="btn btn-primary mb-2" @onclick="AddShow" title="Add show">+</button>
+
+<MGrid T="ShowModel" DataSource="mShows" EnableAdding="false" EnableEditing="false" EnableDeleting="false" EnableFilterRow="false" EnableGrouping="false" EnableExport="false" EnableImport="false" EnableSaveState="false">
+    <MGridColumn Property="@nameof(ShowModel.Name)" HeaderText="Name" PropertyType="typeof(string)" />
+    <MGridColumn Property="@nameof(ShowModel.AudioFileName)" HeaderText="Audio File" PropertyType="typeof(string)" />
+
+    <MGridComplexColumn T="ShowModel" Identifier="EventCount" HeaderText="Events">
+        <CellTemplate Context="show">
+            <span>@show.Events.Count</span>
+        </CellTemplate>
+    </MGridComplexColumn>
+
+    <MGridComplexColumn T="ShowModel" Identifier="Actions" HeaderText="">
+        <CellTemplate Context="show">
+            <button class="btn btn-primary btn-sm" @onclick="() => OpenShow(show)">Open</button>
+            <button class="btn btn-danger btn-sm" @onclick="() => RemoveShow(show)">Delete</button>
+        </CellTemplate>
+    </MGridComplexColumn>
+</MGrid>
+
+@code {
+
+    protected List<ShowModel> mShows = new();
+
+    protected override void OnInitialized()
+    {
+        Refresh();
+    }
+
+    protected void Refresh()
+    {
+        mShows = ShowService.Shows.ToList();
+    }
+
+    protected void AddShow()
+    {
+        var show = new ShowModel
+        {
+            Name = "Show " + (ShowService.Shows.Count + 1)
+        };
+
+        ShowService.AddShow(show);
+
+        NavigationManager.NavigateTo("shows/" + show.Id);
+    }
+
+    protected void OpenShow(ShowModel pShow)
+    {
+        NavigationManager.NavigateTo("shows/" + pShow.Id);
+    }
+
+    protected void RemoveShow(ShowModel pShow)
+    {
+        ShowService.RemoveShow(pShow);
+        Refresh();
+    }
+}

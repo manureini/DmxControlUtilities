@@ -9,26 +9,27 @@ namespace DmxControlUtilities.Web.Services
     {
         private const int FftSize = 2048;
 
-        private string? _cachedFilePath;
+        private Stream? _cachedStream;
+        private int _cachedMaxWidth;
         private List<double[]>? _cachedColumns;
         private double _cachedMaxMagnitude;
 
-        public byte[] CreateSpectrogramBmp(string pAudioFilePath, int pMaxWidth = 2000, int pHeight = 512,
+        public byte[] CreateSpectrogramBmp(Stream pAudioStream, int pMaxWidth = 2000, int pHeight = 512,
             double pThreshold = 0, double pRatio = 1, double pBandwidth = 2)
         {
             List<double[]> columns;
             double maxMagnitude;
 
-            if (_cachedFilePath == pAudioFilePath && _cachedColumns != null)
+            if (ReferenceEquals(_cachedStream, pAudioStream) && _cachedMaxWidth == pMaxWidth && _cachedColumns != null)
             {
                 columns = _cachedColumns;
                 maxMagnitude = _cachedMaxMagnitude;
             }
             else
             {
-                float[] samples = ReadMonoSamples(pAudioFilePath, out _);
+                float[] samples = ReadMonoSamples(pAudioStream, out _);
 
-                int step = Math.Max(FftSize / 2, (samples.Length - FftSize) / Math.Max(1, pMaxWidth));
+                int step = Math.Max(FftSize / 16, (samples.Length - FftSize) / Math.Max(1, pMaxWidth));
 
                 var window = Window.Hann(FftSize);
                 columns = new List<double[]>();
@@ -61,7 +62,8 @@ namespace DmxControlUtilities.Web.Services
                 if (maxMagnitude <= 0)
                     maxMagnitude = 1;
 
-                _cachedFilePath = pAudioFilePath;
+                _cachedStream = pAudioStream;
+                _cachedMaxWidth = pMaxWidth;
                 _cachedColumns = columns;
                 _cachedMaxMagnitude = maxMagnitude;
             }
@@ -137,29 +139,31 @@ namespace DmxControlUtilities.Web.Services
             };
         }
 
-        private static float[] ReadMonoSamples(string pFilePath, out int pSampleRate)
+        private static float[] ReadMonoSamples(Stream pAudioStream, out int pSampleRate)
         {
-            using var reader = new AudioFileReader(pFilePath);
+            if (pAudioStream.CanSeek)
+                pAudioStream.Position = 0;
 
-            pSampleRate = reader.WaveFormat.SampleRate;
-            int channels = reader.WaveFormat.Channels;
+            using var reader = new StreamMediaFoundationReader(pAudioStream);
 
-            var samples = new List<float>((int)(reader.Length / 4 / channels));
-            var buffer = new float[reader.WaveFormat.SampleRate * channels];
+            var sampleProvider = reader.ToSampleProvider().ToMono();
+
+            pSampleRate = sampleProvider.WaveFormat.SampleRate;
+
+            var samples = new List<float>((int)(reader.Length / 4 / reader.WaveFormat.Channels));
+            var buffer = new float[pSampleRate];
 
             int read;
-            while ((read = reader.Read(buffer, 0, buffer.Length)) > 0)
+            while ((read = sampleProvider.Read(buffer, 0, buffer.Length)) > 0)
             {
-                for (int i = 0; i < read; i += channels)
+                for (int i = 0; i < read; i++)
                 {
-                    float sum = 0;
-                    for (int c = 0; c < channels && i + c < read; c++)
-                    {
-                        sum += buffer[i + c];
-                    }
-                    samples.Add(sum / channels);
+                    samples.Add(buffer[i]);
                 }
             }
+
+            if (pAudioStream.CanSeek)
+                pAudioStream.Position = 0;
 
             return samples.ToArray();
         }
