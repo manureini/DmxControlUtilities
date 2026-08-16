@@ -1,0 +1,98 @@
+@using DmxControlUtilities.Lib.Models
+@using DmxControlUtilities.Web.Components.Tracks
+
+<div style="margin-bottom: 1rem; user-select: none;">
+    <TimeScale Duration="Duration" Width="StripWidth" Height="16" MinTickSpacingPx="100" />
+
+    <div style="position: relative; width: 100%; height: 2rem; border: 1px solid #ccc; border-top: none; border-radius: 0 0 4px 4px; background-color: #f5f5f5; overflow: hidden;">
+        @* audio file blocks *@
+        @if (Show != null)
+        {
+            @foreach (var track in Show.AudioTracks)
+            {
+                var state = GetState(track.Id);
+
+                for (int i = 0; i < track.AudioFiles.Count; i++)
+                {
+                    var file = track.AudioFiles[i];
+                    var duration = i < state.FileDurations.Count ? state.FileDurations[i] : TimeSpan.Zero;
+
+                    if (duration <= TimeSpan.Zero)
+                        continue;
+
+                    <div title="@file.FileName (@FormatTime(file.StartOffset)) - @track.Name"
+                         style="position: absolute; top: 2px; bottom: 2px; left: @(LeftPct(file.StartOffset)); width: @(WidthPct(duration)); background-color: @(track.Muted ? "#b6c2d6" : "#4a7ad1"); border: 1px solid #33549c; border-radius: 2px; overflow: hidden; white-space: nowrap; font-size: 0.6rem; color: #fff; padding-left: 2px; display: flex; align-items: center;">
+                        @track.Name
+                    </div>
+                }
+            }
+
+            @* light events *@
+            @foreach (var lightEvent in Show.AllEvents)
+            {
+                <div title="@FormatTime(lightEvent.Time)"
+                     style="position: absolute; top: 0; bottom: 0; width: 4px; margin-left: -2px; left: @(LeftPct(lightEvent.Time)); background-color: @lightEvent.ColorHex; border-left: 1px solid #333;">
+                </div>
+            }
+        }
+
+        @* cursor *@
+        <div style="position: absolute; top: 0; bottom: 0; left: @(CursorXPct); width: 2px; background-color: red;"></div>
+    </div>
+</div>
+
+@code {
+
+    /// <summary>
+    /// The show whose audio files and light events are displayed.
+    /// </summary>
+    [Parameter]
+    public TimecodeShow? Show { get; set; }
+
+    /// <summary>
+    /// The length of the show timeline.
+    /// </summary>
+    [Parameter]
+    public TimeSpan Duration { get; set; }
+
+    /// <summary>
+    /// The current playback position.
+    /// </summary>
+    [Parameter]
+    public TimeSpan Position { get; set; }
+
+    /// <summary>
+    /// Provides the UI state (file durations) of an audio track.
+    /// </summary>
+    [Parameter]
+    public Func<Guid, AudioTrackState> GetState { get; set; } = null!;
+
+    private const double StripWidth = 2000;
+
+    private string CursorXPct => Pct(Position);
+
+    private string Pct(TimeSpan pTime)
+    {
+        double fraction = Duration > TimeSpan.Zero
+            ? Math.Clamp(pTime.TotalSeconds / Duration.TotalSeconds, 0, 1)
+            : 0;
+
+        return (fraction * 100).ToString("0.###", System.Globalization.CultureInfo.InvariantCulture) + "%";
+    }
+
+    private string LeftPct(TimeSpan pTime) => Pct(pTime);
+
+    private string WidthPct(TimeSpan pDuration)
+    {
+        double fraction = Duration > TimeSpan.Zero
+            ? Math.Clamp(pDuration.TotalSeconds / Duration.TotalSeconds, 0, 1)
+            : 0;
+
+        return (fraction * 100).ToString("0.###", System.Globalization.CultureInfo.InvariantCulture) + "%";
+    }
+
+    private static string FormatTime(TimeSpan pTime)
+    {
+        return pTime.ToString(@"mm\:ss\.f");
+    }
+}

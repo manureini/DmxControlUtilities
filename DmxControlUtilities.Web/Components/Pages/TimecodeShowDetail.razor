@@ -60,6 +60,11 @@ else
         <p style="color: red;">@_errorMessage</p>
     }
 
+    <ShowOverviewComponent Show="_show"
+                           Duration="GetShowDuration()"
+                           Position="ClockService.Position"
+                           GetState="GetState" />
+
     @foreach (var audioTrack in _show.AudioTracks)
     {
         var track = audioTrack;
