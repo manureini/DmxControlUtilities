@@ -3,11 +3,6 @@
 @implements IDisposable
 
 <div style="margin-top: 1rem;">
-    <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
-        <strong>@Track.Name</strong>
-        <button class="btn btn-danger btn-sm" @onclick="OnRemove" title="Remove audio track">x</button>
-    </div>
-
     <div style="margin: 0.25rem 0; display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
         @for (int i = 0; i < Track.AudioFiles.Count; i++)
         {
@@ -31,9 +26,9 @@
     <div style="width: 88vw; box-sizing: border-box; overflow: hidden; border: 1px solid #ccc; border-radius: 6px; padding: 1rem; background-color: #fff;">
         <div style="display: flex; gap: 1rem; align-items: flex-start; width: 100%;">
             <div style="flex: 0 0 220px; border: 1px solid #ccc; border-radius: 6px; padding: 1rem;">
-                <div style="display: flex; align-items: center; justify-content: space-between;">
-                    <h6 style="margin: 0;">Image Settings</h6>
-                    <span style="display: inline-flex; gap: 0.25rem; align-items: center;">
+                <div style="display: flex; align-items: center; justify-content: space-between; gap: 0.25rem;">
+                    <strong style="margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="@Track.Name">@Track.Name</strong>
+                    <span style="display: inline-flex; gap: 0.25rem; align-items: center; flex-shrink: 0;">
                         <button type="button" class="btn btn-sm @(Track.Muted ? "btn-secondary" : "btn-outline-secondary")" style="padding: 0 0.4rem; line-height: 1.2;"
                                 title="@(Track.Muted ? "Unmute track" : "Mute track")" @onclick="ToggleMute">
                             @if (Track.Muted)
@@ -52,6 +47,7 @@
                             }
                         </button>
                         <button type="button" class="btn btn-secondary btn-sm" style="padding: 0 0.4rem;" title="Add audio file" @onclick="ShowAddFileModal">+</button>
+                        <button type="button" class="btn btn-danger btn-sm" style="padding: 0 0.4rem;" title="Remove audio track" @onclick="OnRemove">x</button>
                     </span>
                 </div>
 

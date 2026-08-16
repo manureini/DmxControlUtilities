@@ -3,19 +3,17 @@
 @implements IDisposable
 
 <div style="margin-top: 1rem;">
-    <div style="display: flex; gap: 0.5rem; align-items: center;">
-        <input class="form-control form-control-sm" style="width: auto;" @bind="Track.Name" />
-        <span style="color: #888; font-size: 0.9rem;">@Track.Events.Count events</span>
-        <button class="btn btn-danger btn-sm" @onclick="OnRemove" title="Remove light track">x</button>
-    </div>
-
     <div style="width: 88vw; box-sizing: border-box; overflow: hidden; border: 1px solid #ccc; border-radius: 6px; padding: 1rem; background-color: #fff;">
         <div style="display: flex; gap: 1rem; align-items: stretch; width: 100%;">
             <div style="flex: 0 0 220px; border: 1px solid #ccc; border-radius: 6px; padding: 1rem;">
-                <div style="display: flex; align-items: center; justify-content: space-between;">
-                    <h6 style="margin: 0;">Event Settings</h6>
-                    <button type="button" class="btn btn-primary btn-sm" style="padding: 0 0.4rem;" title="Add event at current position" @onclick="AddEvent">+</button>
+                <div style="display: flex; align-items: center; justify-content: space-between; gap: 0.25rem;">
+                    <input class="form-control form-control-sm" style="flex: 1 1 auto; min-width: 0;" @bind="Track.Name" />
+                    <span style="display: inline-flex; gap: 0.25rem; align-items: center; flex-shrink: 0;">
+                        <button type="button" class="btn btn-primary btn-sm" style="padding: 0 0.4rem;" title="Add event at current position" @onclick="AddEvent">+</button>
+                        <button type="button" class="btn btn-danger btn-sm" style="padding: 0 0.4rem;" title="Remove light track" @onclick="OnRemove">x</button>
+                    </span>
                 </div>
+                <div style="color: #888; font-size: 0.8rem; margin-top: 0.25rem;">@Track.Events.Count events</div>
 
                 <label style="display: block; margin-top: 0.5rem;">Device</label>
                 <select class="form-select form-select-sm" style="width: 100%;" @bind="SelectedDeviceId">
