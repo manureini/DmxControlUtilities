@@ -120,9 +120,6 @@ namespace DmxControlUtilities.Web.Services
             {
                 DisposePlayback();
 
-                if (playlists.Count == 0)
-                    return;
-
                 // Mix at 48 kHz; resample any playlist that doesn't match so tracks
                 // recorded at different sample rates can play together.
                 var mixer = new MixingSampleProvider(WaveFormat.CreateIeeeFloatWaveFormat(48000, 2))
@@ -142,6 +139,8 @@ namespace DmxControlUtilities.Web.Services
                     _inputs.Add((provider, playlist));
                 }
 
+                // Even with no audible inputs (all tracks muted) keep an output running so
+                // Position advances and time-based output like light events keeps tracking.
                 _mixer = mixer;
                 _output = new WaveOutEvent();
                 _output.Init(_mixer);
