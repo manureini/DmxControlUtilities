@@ -27,6 +27,27 @@ else
     <div class="mb-2" style="display: flex; gap: 0.5rem; align-items: center;">
         <button class="btn btn-secondary btn-sm" @onclick="@(() => NavigationManager.NavigateTo("shows"))">Back</button>
         <input class="form-control" style="width: auto;" @bind="_show.Name" />
+
+        <button class="btn btn-primary" @onclick="OnPlayPause" title="@(PlaybackService.IsPlaying ? "Pause" : "Play")">
+            @if (PlaybackService.IsPlaying)
+            {
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16" style="vertical-align: -0.125em;">
+                    <path d="M5.5 3.5A1.5 1.5 0 0 1 7 5v6a1.5 1.5 0 0 1-3 0V5a1.5 1.5 0 0 1 1.5-1.5zm5 0A1.5 1.5 0 0 1 12 5v6a1.5 1.5 0 0 1-3 0V5a1.5 1.5 0 0 1 1.5-1.5z" />
+                </svg>
+            }
+            else
+            {
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16" style="vertical-align: -0.125em;">
+                    <path d="m11.596 8.697-6.363 3.692c-.54.313-1.233-.066-1.233-.697V4.308c0-.63.692-1.01 1.233-.696l6.363 3.692a.802.802 0 0 1 0 1.393z" />
+                </svg>
+            }
+        </button>
+        <button class="btn btn-secondary" @onclick="OnStop" title="Stop">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16" style="vertical-align: -0.125em;">
+                <path d="M5 3.5h6A1.5 1.5 0 0 1 12.5 5v6a1.5 1.5 0 0 1-1.5 1.5H5A1.5 1.5 0 0 1 3.5 11V5A1.5 1.5 0 0 1 5 3.5z" />
+            </svg>
+        </button>
+        <span>@FormatTime(_playbackPosition) / @FormatTime(GetShowDuration())</span>
     </div>
 
     <div class="mb-2" style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
@@ -50,9 +71,6 @@ else
             <AudioTrackComponent Track="track"
                                  State="state"
                                  Position="GetPosition(track.Id)"
-                                 IsPlaying="_isPlaying && _playbackTrackId == track.Id"
-                                 OnPlayPause="() => OnPlayPause(track)"
-                                 OnStop="() => OnStop(track)"
                                  OnSettingsChanged="() => RegenerateImages(track)"
                                  OnZoom="_ => RegenerateZoomImages(track)"
                                  OnCursorDrag="args => OnCursorDrag(track, args)"
@@ -111,7 +129,6 @@ else
 
     private Guid? _playbackTrackId;
     private TimeSpan _playbackPosition;
-    private bool _isPlaying;
 
     private System.Timers.Timer? _timer;
 
@@ -280,7 +297,7 @@ else
                 AddEventAtPlaybackPosition();
                 break;
             case "Space":
-                OnPlayPause(track);
+                OnPlayPause();
                 break;
         }
 
@@ -348,7 +365,6 @@ else
             {
                 PlaybackService.Stop();
                 _playbackTrackId = null;
-                _isPlaying = false;
             }
 
             foreach (var file in audioTrack.AudioFiles)
@@ -407,11 +423,9 @@ else
         if (_playbackTrackId == null)
             return;
 
-        _isPlaying = PlaybackService.IsPlaying;
-
         _playbackPosition = PlaybackService.Position;
 
-        if (_isPlaying)
+        if (PlaybackService.IsPlaying)
         {
             LightTrackService.UpdatePosition(_playbackPosition);
         }
@@ -559,42 +573,49 @@ else
         }
     }
 
-    private void OnPlayPause(TimecodeAudioTrack pTrack)
+    private void OnPlayPause()
     {
-        if (PlaybackService.IsPlaying && _playbackTrackId == pTrack.Id)
+        if (PlaybackService.IsPlaying)
         {
             PlaybackService.Pause();
+            return;
         }
-        else
+
+        var track = GetPlaybackTrack();
+
+        if (track == null || !track.AudioFiles.Any(f => f.File != null))
+            return;
+
+        if (_playbackTrackId != track.Id)
         {
-            if (_playbackTrackId != pTrack.Id && pTrack.AudioFiles.Any(f => f.File != null))
-            {
-                PlaybackService.Load(pTrack);
-                _playbackTrackId = pTrack.Id;
-                GetState(pTrack.Id).Duration = PlaybackService.Duration;
-                _playbackPosition = GetState(pTrack.Id).Position;
-                PlaybackService.Seek(_playbackPosition);
-            }
-
-            RefreshDevices();
-            LightTrackService.Reset();
-            PlaybackService.Play();
+            PlaybackService.Load(track);
+            _playbackTrackId = track.Id;
+            var state = GetState(track.Id);
+            state.Duration = PlaybackService.Duration;
+            state.ResetScale();
+            _playbackPosition = state.Position;
+            PlaybackService.Seek(_playbackPosition);
         }
 
-        _isPlaying = PlaybackService.IsPlaying;
+        RefreshDevices();
+        LightTrackService.Reset();
+        PlaybackService.Play();
     }
 
-    private void OnStop(TimecodeAudioTrack pTrack)
+    private void OnStop()
     {
-        if (_playbackTrackId == pTrack.Id)
-        {
-            PlaybackService.Stop();
-            _isPlaying = false;
-            _playbackPosition = TimeSpan.Zero;
-        }
+        PlaybackService.Stop();
+        _playbackPosition = TimeSpan.Zero;
 
-        GetState(pTrack.Id).Position = TimeSpan.Zero;
+        if (_playbackTrackId != null)
+            GetState(_playbackTrackId.Value).Position = TimeSpan.Zero;
+
         LightTrackService.Reset();
+    }
+
+    private static string FormatTime(TimeSpan pTime)
+    {
+        return pTime.ToString(@"mm\:ss");
     }
 
     private void RemoveAudioFile(TimecodeAudioTrack pTrack, Guid pFileId)
