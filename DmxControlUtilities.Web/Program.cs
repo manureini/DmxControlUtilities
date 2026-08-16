@@ -1,3 +1,4 @@
+using Blazored.Modal;
 using DmxControlUtilities.Web.Background;
 using DmxControlUtilities.Web.Components;
 using DmxControlUtilities.Web.Models;
@@ -32,6 +33,8 @@ namespace DmxControlUtilities.Web
             builder.Services.AddSingleton<DmxControlUtilities.Lib.Services.TimecodeShowService>();
 
             builder.Services.AddHostedService<DiscoverBackgroundService>();
+
+            builder.Services.AddBlazoredModal();
 
             builder.Services.AddMComponents(o =>
             {

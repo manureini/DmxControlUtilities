@@ -51,7 +51,6 @@ else
     </div>
 
     <div class="mb-2" style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
-        <InputFile OnChange="OnFileSelected" accept=".mp3,.wav,audio/*" />
         <button class="btn btn-secondary btn-sm" @onclick="AddAudioTrack" title="Add sound track">+ Add sound track</button>
         <button class="btn btn-secondary btn-sm" @onclick="AddLightTrack" title="Add light track">+ Add light track</button>
     </div>
@@ -66,28 +65,18 @@ else
         var track = audioTrack;
         var state = GetState(track.Id);
 
-        @if (track.AudioFiles.Count > 0)
-        {
-            <AudioTrackComponent Track="track"
-                                 State="state"
-                                 Position="GetPosition(track.Id)"
-                                 OnSettingsChanged="() => RegenerateImages(track)"
-                                 OnZoom="_ => RegenerateZoomImages(track)"
-                                 OnCursorDrag="args => OnCursorDrag(track, args)"
-                                 OnFileDrag="args => OnFileDrag(track, args)"
-                                 @bind-SelectedFileId="_selectedAudioFileId"
-                                 OnRemove="() => RemoveTrack(track)"
-                                 OnRemoveFile="fileId => RemoveAudioFile(track, fileId)"
-                                 OnMoveFile="args => MoveAudioFile(track, args.FileId, args.Direction)" />
-        }
-        else
-        {
-            <div style="margin-top: 1rem; display: flex; gap: 0.5rem; align-items: center;">
-                <strong>@(string.IsNullOrEmpty(track.Name) ? "Empty audio track" : track.Name)</strong>
-                <span style="color: #888; font-size: 0.9rem;">No audio files. Use the file picker above to add audio.</span>
-                <button class="btn btn-danger btn-sm" @onclick="() => RemoveTrack(track)" title="Remove audio track">x</button>
-            </div>
-        }
+        <AudioTrackComponent Track="track"
+                             State="state"
+                             Position="GetPosition(track.Id)"
+                             OnSettingsChanged="() => RegenerateImages(track)"
+                             OnZoom="_ => RegenerateZoomImages(track)"
+                             OnCursorDrag="args => OnCursorDrag(track, args)"
+                             OnFileDrag="args => OnFileDrag(track, args)"
+                             @bind-SelectedFileId="_selectedAudioFileId"
+                             OnRemove="() => RemoveTrack(track)"
+                             OnAddFile="args => AddAudioFile(track, args)"
+                             OnRemoveFile="fileId => RemoveAudioFile(track, fileId)"
+                             OnMoveFile="args => MoveAudioFile(track, args.FileId, args.Direction)" />
     }
 
     @foreach (var lightTrack in _show.LightEventTracks)
@@ -118,8 +107,6 @@ else
 
     private ShowModel? _show;
 
-    private const long MaxFileSize = 200 * 1024 * 1024;
-
     private bool _isProcessing;
     private string? _errorMessage;
 
@@ -129,6 +116,7 @@ else
 
     private Guid? _playbackTrackId;
     private TimeSpan _playbackPosition;
+    private bool _isDraggingCursor;
 
     private System.Timers.Timer? _timer;
 
@@ -253,9 +241,7 @@ else
                 {
                     await GenerateImages(track);
 
-                    PlaybackService.Load(track);
-                    _playbackTrackId = track.Id;
-                    GetState(track.Id).Duration = PlaybackService.Duration;
+                    GetState(track.Id).Duration = ComputeTrackDuration(track);
                     GetState(track.Id).ResetScale();
                     GetState(track.Id).Position = TimeSpan.Zero;
                 }
@@ -420,10 +406,25 @@ else
 
     private void UpdatePlaybackState()
     {
-        if (_playbackTrackId == null)
+        // Nothing loaded into the playback service yet: keep the cursor position the user
+        // dragged to instead of overwriting it with the service's zero position.
+        if (!PlaybackService.IsLoaded)
+            return;
+
+        // Don't overwrite the dragged position while the user is scrubbing the cursor.
+        if (_isDraggingCursor)
             return;
 
         _playbackPosition = PlaybackService.Position;
+
+        // Keep all track cursors in sync with the shared playback position.
+        if (_show != null)
+        {
+            foreach (var track in _show.AudioTracks)
+            {
+                GetState(track.Id).Position = _playbackPosition;
+            }
+        }
 
         if (PlaybackService.IsPlaying)
         {
@@ -517,7 +518,7 @@ else
         });
     }
 
-    private async Task OnFileSelected(InputFileChangeEventArgs pArgs)
+    private async Task AddAudioFile(TimecodeAudioTrack pTrack, AddAudioFileModal.AudioFileResult pResult)
     {
         _errorMessage = null;
         _isProcessing = true;
@@ -526,41 +527,33 @@ else
 
         try
         {
-            var audioStream = new MemoryStream();
-
-            await pArgs.File.OpenReadStream(MaxFileSize).CopyToAsync(audioStream);
-
-            audioStream.Position = 0;
-
             if (_show != null)
             {
-                var track = _show.AudioTracks.FirstOrDefault();
-
-                if (track == null)
-                {
-                    track = new TimecodeAudioTrack { Name = "Audio 1" };
-                    _show.Tracks.Add(track);
-                }
+                var track = pTrack;
 
                 track.AudioFiles.Add(new TimecodeAudioFile
                 {
-                    FileName = pArgs.File.Name,
-                    File = audioStream,
+                    FileName = pResult.FileName,
+                    File = pResult.File,
                     StartOffset = GetState(track.Id).Duration
                 });
 
                 if (string.IsNullOrEmpty(track.Name))
-                    track.Name = pArgs.File.Name;
+                    track.Name = pResult.FileName;
 
                 var state = GetState(track.Id);
-                state.Position = TimeSpan.Zero;
 
                 await GenerateImages(track);
 
-                PlaybackService.Load(track);
+                state.Duration = ComputeTrackDuration(track);
+                state.ResetScale();
+                state.Position = TimeSpan.Zero;
+
+                // Reload the mixed playback of all tracks from the start.
                 _playbackTrackId = track.Id;
-                state.Duration = PlaybackService.Duration;
                 _playbackPosition = TimeSpan.Zero;
+
+                RefreshAllTracksPlayback();
             }
         }
         catch (Exception ex)
@@ -581,21 +574,26 @@ else
             return;
         }
 
-        var track = GetPlaybackTrack();
-
-        if (track == null || !track.AudioFiles.Any(f => f.File != null))
+        if (_show == null || !_show.AudioTracks.Any(t => t.AudioFiles.Any(f => f.File != null)))
             return;
 
-        if (_playbackTrackId != track.Id)
+        // Load and mix all audio tracks so they play together at the same position.
+        PlaybackService.Load(_show.AudioTracks);
+
+        foreach (var track in _show.AudioTracks)
         {
-            PlaybackService.Load(track);
-            _playbackTrackId = track.Id;
             var state = GetState(track.Id);
-            state.Duration = PlaybackService.Duration;
-            state.ResetScale();
-            _playbackPosition = state.Position;
-            PlaybackService.Seek(_playbackPosition);
+
+            if (state.Duration <= TimeSpan.Zero)
+            {
+                state.Duration = ComputeTrackDuration(track);
+                state.ResetScale();
+            }
+
+            state.Position = _playbackPosition;
         }
+
+        PlaybackService.Seek(_playbackPosition);
 
         RefreshDevices();
         LightTrackService.Reset();
@@ -607,10 +605,29 @@ else
         PlaybackService.Stop();
         _playbackPosition = TimeSpan.Zero;
 
-        if (_playbackTrackId != null)
-            GetState(_playbackTrackId.Value).Position = TimeSpan.Zero;
+        foreach (var trackId in _trackStates.Keys)
+        {
+            _trackStates[trackId].Position = TimeSpan.Zero;
+        }
 
         LightTrackService.Reset();
+    }
+
+    /// <summary>
+    /// Computes the duration of a single track from its audio files without loading playback.
+    /// </summary>
+    private static TimeSpan ComputeTrackDuration(TimecodeAudioTrack pTrack)
+    {
+        var playlist = PlaylistWaveStream.Create(pTrack.AudioFiles.Where(f => f.File != null).Select(f => (f.File!, f.StartOffset)));
+
+        if (playlist != null)
+        {
+            var duration = playlist.TotalTime;
+            playlist.Dispose();
+            return duration;
+        }
+
+        return TimeSpan.Zero;
     }
 
     private static string FormatTime(TimeSpan pTime)
@@ -657,36 +674,11 @@ else
 
             await GenerateImages(pTrack);
 
-            if (_playbackTrackId == pTrack.Id)
-            {
-                var position = _playbackPosition;
-                bool wasPlaying = PlaybackService.IsPlaying;
+            state.Duration = ComputeTrackDuration(pTrack);
+            state.ResetScale();
 
-                PlaybackService.Load(pTrack);
-                state.Duration = PlaybackService.Duration;
-                state.ResetScale();
-
-                PlaybackService.Seek(position);
-
-                if (wasPlaying)
-                    PlaybackService.Play();
-            }
-            else
-            {
-                var playlist = PlaylistWaveStream.Create(pTrack.AudioFiles.Where(f => f.File != null).Select(f => f.File!));
-
-                if (playlist != null)
-                {
-                    state.Duration = playlist.TotalTime;
-                    playlist.Dispose();
-                }
-                else
-                {
-                    state.Duration = TimeSpan.Zero;
-                }
-
-                state.ResetScale();
-            }
+            // Reload the mixed playback of all tracks at the current position.
+            RefreshAllTracksPlayback();
 
             LightTrackService.Reset();
         }
@@ -701,12 +693,24 @@ else
     private void OnCursorDrag(TimecodeAudioTrack pTrack, AudioTrackComponent.CursorDragArgs pArgs)
     {
         var position = PositionFromOffset(pTrack.Id, pArgs.OffsetX);
-        GetState(pTrack.Id).Position = position;
 
-        if (pArgs.IsFinished && _playbackTrackId == pTrack.Id)
+        _isDraggingCursor = !pArgs.IsFinished;
+        _playbackPosition = position;
+
+        // Keep all track cursors in sync.
+        if (_show != null)
         {
-            _playbackPosition = position;
-            PlaybackService.Seek(position);
+            foreach (var track in _show.AudioTracks)
+            {
+                GetState(track.Id).Position = position;
+            }
+        }
+
+        // Seek continuously while dragging so scrubbing works while playing, paused, or stopped.
+        PlaybackService.Seek(position);
+
+        if (pArgs.IsFinished)
+        {
             LightTrackService.Reset();
 
             LightTrackService.UpdatePosition(position);
@@ -748,13 +752,22 @@ else
     /// </summary>
     private void RefreshAudioTrackPlayback(TimecodeAudioTrack pTrack)
     {
-        if (_playbackTrackId != pTrack.Id)
+        RefreshAllTracksPlayback();
+    }
+
+    /// <summary>
+    /// Reloads the mixed playback of all audio tracks at the current position,
+    /// keeping the playing/paused state. Does nothing when nothing has been loaded yet.
+    /// </summary>
+    private void RefreshAllTracksPlayback()
+    {
+        if (_show == null || !_show.AudioTracks.Any(t => t.AudioFiles.Any(f => f.File != null)))
             return;
 
         var position = _playbackPosition;
         bool wasPlaying = PlaybackService.IsPlaying;
 
-        PlaybackService.Load(pTrack);
+        PlaybackService.Load(_show.AudioTracks);
 
         PlaybackService.Seek(position);
 

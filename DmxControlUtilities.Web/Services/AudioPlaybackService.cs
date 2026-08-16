@@ -1,5 +1,6 @@
 using DmxControlUtilities.Lib.Models;
 using NAudio.Wave;
+using NAudio.Wave.SampleProviders;
 
 namespace DmxControlUtilities.Web.Services
 {
@@ -7,27 +8,72 @@ namespace DmxControlUtilities.Web.Services
     {
         private readonly object _lock = new();
 
-        private WaveStream? _reader;
+        private MixingSampleProvider? _mixer;
         private WaveOutEvent? _output;
 
+        // The source streams currently loaded into the mixer, kept so they can be
+        // sought and disposed. Each entry maps a sample-provider input to its source stream.
+        private readonly List<(ISampleProvider Provider, WaveStream Source)> _inputs = new();
+
+        // WaveOutEvent.GetPosition() only counts bytes played since Init and is not affected by
+        // repositioning the source streams. These track the last seek so Position stays correct.
+        private TimeSpan _seekPosition;
+        private long _outputBytesAtSeek;
+
+        /// <summary>
+        /// True when an output device has been initialized with loaded sources.
+        /// While false, <see cref="Position"/> has no meaningful value.
+        /// </summary>
+        public bool IsLoaded
+        {
+            get
+            {
+                lock (_lock)
+                {
+                    return _output != null;
+                }
+            }
+        }
+
+        /// <summary>
+        /// The total duration of the loaded sources (the longest track).
+        /// </summary>
         public TimeSpan Duration
         {
             get
             {
                 lock (_lock)
                 {
-                    return _reader?.TotalTime ?? TimeSpan.Zero;
+                    return _inputs.Count == 0
+                        ? TimeSpan.Zero
+                        : _inputs.Max(i => i.Source.TotalTime);
                 }
             }
         }
 
+        /// <summary>
+        /// The current playback position, taken from the output device so it stays
+        /// accurate while mixing multiple tracks. Offset by the last seek, because the
+        /// output device keeps counting from where it was initialized.
+        /// </summary>
         public TimeSpan Position
         {
             get
             {
                 lock (_lock)
                 {
-                    return _reader?.CurrentTime ?? TimeSpan.Zero;
+                    if (_output == null || _mixer == null)
+                        return _seekPosition;
+
+                    long bytes = _output.GetPosition() - _outputBytesAtSeek;
+
+                    if (bytes < 0)
+                        bytes = 0;
+
+                    long frames = bytes / _mixer.WaveFormat.BlockAlign;
+                    var elapsed = TimeSpan.FromSeconds((double)frames / _mixer.WaveFormat.SampleRate);
+
+                    return _seekPosition + elapsed;
                 }
             }
         }
@@ -44,29 +90,67 @@ namespace DmxControlUtilities.Web.Services
         }
 
         /// <summary>
-        /// Loads all audio files of an audio track for playback at their start offsets.
-        /// Ranges between files are silent. The total duration spans to the end of the last file.
+        /// Loads all given audio tracks and mixes them so they play together at the same position.
+        /// Each track's files play at their start offsets. All tracks are audible simultaneously.
         /// </summary>
-        public void Load(TimecodeAudioTrack pTrack)
+        public void Load(IEnumerable<TimecodeAudioTrack> pTracks)
         {
-            var files = pTrack.AudioFiles
-                .Where(f => f.File != null)
-                .Select(f => (f.File!, f.StartOffset))
-                .ToList();
+            var playlists = new List<PlaylistWaveStream>();
 
-            var playlist = PlaylistWaveStream.Create(files);
+            foreach (var track in pTracks)
+            {
+                var files = track.AudioFiles
+                    .Where(f => f.File != null)
+                    .Select(f => (f.File!, f.StartOffset))
+                    .ToList();
 
-            if (playlist == null)
-                return;
+                if (files.Count == 0)
+                    continue;
+
+                var playlist = PlaylistWaveStream.Create(files);
+
+                if (playlist != null)
+                    playlists.Add(playlist);
+            }
 
             lock (_lock)
             {
                 DisposePlayback();
 
-                _reader = playlist;
+                if (playlists.Count == 0)
+                    return;
+
+                // Mix at 48 kHz; resample any playlist that doesn't match so tracks
+                // recorded at different sample rates can play together.
+                var mixer = new MixingSampleProvider(WaveFormat.CreateIeeeFloatWaveFormat(48000, 2))
+                {
+                    ReadFully = true
+                };
+
+                foreach (var playlist in playlists)
+                {
+                    playlist.Position = 0;
+                    ISampleProvider provider = playlist.ToSampleProvider();
+
+                    if (provider.WaveFormat.SampleRate != mixer.WaveFormat.SampleRate)
+                        provider = new WdlResamplingSampleProvider(provider, mixer.WaveFormat.SampleRate);
+
+                    mixer.AddMixerInput(provider);
+                    _inputs.Add((provider, playlist));
+                }
+
+                _mixer = mixer;
                 _output = new WaveOutEvent();
-                _output.Init(_reader);
+                _output.Init(_mixer);
             }
+        }
+
+        /// <summary>
+        /// Loads a single audio track for playback.
+        /// </summary>
+        public void Load(TimecodeAudioTrack pTrack)
+        {
+            Load(new[] { pTrack });
         }
 
         /// <summary>
@@ -82,9 +166,23 @@ namespace DmxControlUtilities.Web.Services
             {
                 DisposePlayback();
 
-                _reader = new StreamMediaFoundationReader(pAudioStream);
+                var reader = new StreamMediaFoundationReader(pAudioStream);
+
+                _mixer = new MixingSampleProvider(WaveFormat.CreateIeeeFloatWaveFormat(48000, 2))
+                {
+                    ReadFully = true
+                };
+
+                ISampleProvider provider = reader.ToSampleProvider();
+
+                if (provider.WaveFormat.SampleRate != _mixer.WaveFormat.SampleRate)
+                    provider = new WdlResamplingSampleProvider(provider, _mixer.WaveFormat.SampleRate);
+
+                _mixer.AddMixerInput(provider);
+                _inputs.Add((provider, reader));
+
                 _output = new WaveOutEvent();
-                _output.Init(_reader);
+                _output.Init(_mixer);
             }
         }
 
@@ -109,11 +207,7 @@ namespace DmxControlUtilities.Web.Services
             lock (_lock)
             {
                 _output?.Stop();
-
-                if (_reader != null)
-                {
-                    _reader.CurrentTime = TimeSpan.Zero;
-                }
+                Seek(TimeSpan.Zero);
             }
         }
 
@@ -121,16 +215,20 @@ namespace DmxControlUtilities.Web.Services
         {
             lock (_lock)
             {
-                if (_reader == null)
-                    return;
-
                 if (pPosition < TimeSpan.Zero)
                     pPosition = TimeSpan.Zero;
 
-                if (pPosition > _reader.TotalTime)
-                    pPosition = _reader.TotalTime;
+                // Remember where we sought to and the device counter at that moment, so
+                // Position keeps reporting the seeked position plus what played since.
+                _seekPosition = pPosition;
+                _outputBytesAtSeek = _output?.GetPosition() ?? 0;
 
-                _reader.CurrentTime = pPosition;
+                foreach (var (_, source) in _inputs)
+                {
+                    long target = (long)(pPosition.TotalSeconds * source.WaveFormat.SampleRate) * source.WaveFormat.BlockAlign;
+                    target -= target % source.WaveFormat.BlockAlign;
+                    source.Position = Math.Clamp(target, 0, source.Length);
+                }
             }
         }
 
@@ -140,8 +238,19 @@ namespace DmxControlUtilities.Web.Services
             _output?.Dispose();
             _output = null;
 
-            _reader?.Dispose();
-            _reader = null;
+            foreach (var (_, source) in _inputs)
+            {
+                source.Dispose();
+            }
+
+            _inputs.Clear();
+
+            _mixer?.RemoveAllMixerInputs();
+            _mixer = null;
+
+            // A new output device starts counting at zero again.
+            _seekPosition = TimeSpan.Zero;
+            _outputBytesAtSeek = 0;
         }
 
         public void Dispose()

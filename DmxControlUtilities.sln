@@ -17,6 +17,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MComponents", "..\..\..\..\
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LumosProtobuf", "DMXControl3-Network-Interface\csharp\LumosProtobuf.csproj", "{D79B4F45-EF07-98EB-47E0-6F4791EA642F}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Blazored.Modal", "..\..\..\..\..\GitHub\Modal\src\Blazored.Modal\Blazored.Modal.csproj", "{33CEE7A8-16EB-BBA9-D2C6-7CB516A24904}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -51,6 +53,10 @@ Global
 		{D79B4F45-EF07-98EB-47E0-6F4791EA642F}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{D79B4F45-EF07-98EB-47E0-6F4791EA642F}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{D79B4F45-EF07-98EB-47E0-6F4791EA642F}.Release|Any CPU.Build.0 = Release|Any CPU
+		{33CEE7A8-16EB-BBA9-D2C6-7CB516A24904}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{33CEE7A8-16EB-BBA9-D2C6-7CB516A24904}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{33CEE7A8-16EB-BBA9-D2C6-7CB516A24904}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{33CEE7A8-16EB-BBA9-D2C6-7CB516A24904}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

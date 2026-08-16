@@ -1,0 +1,32 @@
+@using Microsoft.AspNetCore.Components.Forms
+
+<div style="min-width: 260px;">
+    <InputFile OnChange="HandleFileSelected" accept=".mp3,.wav,audio/*" />
+</div>
+
+@code {
+
+    public const long MaxFileSize = 200 * 1024 * 1024;
+
+    [CascadingParameter]
+    public BlazoredModalInstance Modal { get; set; } = null!;
+
+    [Parameter]
+    public EventCallback<AudioFileResult> OnFileSelected { get; set; }
+
+    private async Task HandleFileSelected(InputFileChangeEventArgs pArgs)
+    {
+        var audioStream = new MemoryStream();
+
+        await pArgs.File.OpenReadStream(MaxFileSize).CopyToAsync(audioStream);
+
+        audioStream.Position = 0;
+
+        await Modal.CloseAsync();
+
+        if (OnFileSelected.HasDelegate)
+            await OnFileSelected.InvokeAsync(new AudioFileResult(pArgs.File.Name, audioStream));
+    }
+
+    public record AudioFileResult(string FileName, MemoryStream File);
+}

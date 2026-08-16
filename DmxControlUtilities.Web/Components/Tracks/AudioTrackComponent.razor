@@ -29,7 +29,10 @@
     <div style="width: 88vw; box-sizing: border-box; overflow: hidden; border: 1px solid #ccc; border-radius: 6px; padding: 1rem; background-color: #fff;">
         <div style="display: flex; gap: 1rem; align-items: flex-start; width: 100%;">
             <div style="flex: 0 0 220px; border: 1px solid #ccc; border-radius: 6px; padding: 1rem;">
-                <h6>Image Settings</h6>
+                <div style="display: flex; align-items: center; justify-content: space-between;">
+                    <h6 style="margin: 0;">Image Settings</h6>
+                    <button type="button" class="btn btn-secondary btn-sm" style="padding: 0 0.4rem;" title="Add audio file" @onclick="ShowAddFileModal">+</button>
+                </div>
 
                 <label style="display: block; margin-top: 0.5rem;">Threshold: @Track.Threshold.ToString("0.00")</label>
                 <input type="range" min="0" max="0.9" step="0.01" style="width: 100%;"
@@ -105,6 +108,12 @@
     [Parameter]
     public EventCallback OnRemove { get; set; }
 
+    /// <summary>
+    /// Raised when the user picks an audio file to add to this track.
+    /// </summary>
+    [Parameter]
+    public EventCallback<AddAudioFileModal.AudioFileResult> OnAddFile { get; set; }
+
     [Parameter]
     public EventCallback<Guid> OnRemoveFile { get; set; }
 
@@ -125,6 +134,19 @@
     /// </summary>
     [Parameter]
     public EventCallback<FileDragArgs> OnFileDrag { get; set; }
+
+    [CascadingParameter]
+    public IModalService Modal { get; set; } = null!;
+
+    private void ShowAddFileModal()
+    {
+        var parameters = new ModalParameters
+        {
+            { nameof(AddAudioFileModal.OnFileSelected), OnAddFile }
+        };
+
+        Modal.Show<AddAudioFileModal>("Add audio file", parameters);
+    }
 
     private bool _isDraggingCursor;
     private TimecodeAudioFile? mDraggingFile;
