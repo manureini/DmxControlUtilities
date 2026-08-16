@@ -31,7 +31,26 @@
             <div style="flex: 0 0 220px; border: 1px solid #ccc; border-radius: 6px; padding: 1rem;">
                 <div style="display: flex; align-items: center; justify-content: space-between;">
                     <h6 style="margin: 0;">Image Settings</h6>
-                    <button type="button" class="btn btn-secondary btn-sm" style="padding: 0 0.4rem;" title="Add audio file" @onclick="ShowAddFileModal">+</button>
+                    <span style="display: inline-flex; gap: 0.25rem; align-items: center;">
+                        <button type="button" class="btn btn-sm @(Track.Muted ? "btn-secondary" : "btn-outline-secondary")" style="padding: 0 0.4rem; line-height: 1.2;"
+                                title="@(Track.Muted ? "Unmute track" : "Mute track")" @onclick="ToggleMute">
+                            @if (Track.Muted)
+                            {
+                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16" style="vertical-align: -0.1em;">
+                                    <path d="M6.717 3.55A.5.5 0 0 1 7 3.55v8.9a.5.5 0 0 1-.812.39L3.825 10.5H1.5A.5.5 0 0 1 1 10V6a.5.5 0 0 1 .5-.5h2.325l2.363-1.89a.5.5 0 0 1 .529-.06zM8 5.04 6.056 3.59 7.5 2.146 9.444 3.59l1.944-1.444 1.444 1.444-1.944 1.444 1.944 1.444-1.444 1.444-1.944-1.444L7.5 8.922 6.056 7.478 8 6.034z" transform="translate(0 1) scale(0.9)"/>
+                                </svg>
+                            }
+                            else
+                            {
+                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16" style="vertical-align: -0.1em;">
+                                    <path d="M11.536 14.01A8.473 8.473 0 0 0 14.026 8a8.473 8.473 0 0 0-2.49-6.01l-.708.707A7.476 7.476 0 0 1 13.025 8c0 2.071-.84 3.946-2.197 5.303l.708.707z"/>
+                                    <path d="M10.121 12.596A6.48 6.48 0 0 0 12.025 8a6.48 6.48 0 0 0-1.904-4.596l-.707.707A5.483 5.483 0 0 1 11.025 8a5.483 5.483 0 0 1-1.61 3.89l.706.706z"/>
+                                    <path d="M10.025 8a4.486 4.486 0 0 1-1.318 3.182L8 10.475A3.489 3.489 0 0 0 9.025 8c0-.966-.392-1.841-1.025-2.475l.707-.707A4.486 4.486 0 0 1 10.025 8zM7 4.25v7.5L3.5 10.5H1.5a.5.5 0 0 1-.5-.5V6a.5.5 0 0 1 .5-.5h2.325L7 4.25z"/>
+                                </svg>
+                            }
+                        </button>
+                        <button type="button" class="btn btn-secondary btn-sm" style="padding: 0 0.4rem;" title="Add audio file" @onclick="ShowAddFileModal">+</button>
+                    </span>
                 </div>
 
                 <label style="display: block; margin-top: 0.5rem;">Threshold: @Track.Threshold.ToString("0.00")</label>
@@ -135,6 +154,12 @@
     [Parameter]
     public EventCallback<FileDragArgs> OnFileDrag { get; set; }
 
+    /// <summary>
+    /// Raised when the muted state of the track is toggled.
+    /// </summary>
+    [Parameter]
+    public EventCallback OnMuteChanged { get; set; }
+
     [CascadingParameter]
     public IModalService Modal { get; set; } = null!;
 
@@ -152,6 +177,12 @@
     private TimecodeAudioFile? mDraggingFile;
     private double mDraggingFileGrabOffsetX;
     private bool mMoved;
+
+    private void ToggleMute()
+    {
+        Track.Muted = !Track.Muted;
+        OnMuteChanged.InvokeAsync();
+    }
 
     private void SelectFile(TimecodeAudioFile pFile)
     {

@@ -99,6 +99,9 @@ namespace DmxControlUtilities.Web.Services
 
             foreach (var track in pTracks)
             {
+                if (track.Muted)
+                    continue;
+
                 var files = track.AudioFiles
                     .Where(f => f.File != null)
                     .Select(f => (f.File!, f.StartOffset))
@@ -229,6 +232,29 @@ namespace DmxControlUtilities.Web.Services
                     target -= target % source.WaveFormat.BlockAlign;
                     source.Position = Math.Clamp(target, 0, source.Length);
                 }
+
+                // A playlist that reached its end was removed from the mixer, because
+                // MixingSampleProvider drops inputs which return 0 samples. After seeking
+                // back those inputs must be attached again or the track stays silent.
+                RestoreMixerInputs();
+            }
+        }
+
+        /// <summary>
+        /// Re-adds inputs the mixer dropped when their source ran out of data.
+        /// Must be called while holding the lock.
+        /// </summary>
+        private void RestoreMixerInputs()
+        {
+            if (_mixer == null)
+                return;
+
+            var active = _mixer.MixerInputs.ToHashSet();
+
+            foreach (var (provider, _) in _inputs)
+            {
+                if (!active.Contains(provider))
+                    _mixer.AddMixerInput(provider);
             }
         }
 

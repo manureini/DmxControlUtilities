@@ -76,6 +76,7 @@ else
                              OnRemove="() => RemoveTrack(track)"
                              OnAddFile="args => AddAudioFile(track, args)"
                              OnRemoveFile="fileId => RemoveAudioFile(track, fileId)"
+                             OnMuteChanged="OnTrackMuteChanged"
                              OnMoveFile="args => MoveAudioFile(track, args.FileId, args.Direction)" />
     }
 
@@ -775,6 +776,16 @@ else
             PlaybackService.Play();
 
         LightTrackService.Reset();
+    }
+
+    /// <summary>
+    /// Reloads the mix without the muted track when its mute state changes,
+    /// keeping the current position and playing/paused state.
+    /// </summary>
+    private void OnTrackMuteChanged()
+    {
+        if (PlaybackService.IsLoaded)
+            RefreshAllTracksPlayback();
     }
 
     private TimeSpan PositionFromOffset(Guid pTrackId, double pOffsetX)

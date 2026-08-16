@@ -67,5 +67,10 @@ namespace DmxControlUtilities.Lib.Models
         public double Ratio { get; set; } = 1;
 
         public double Bandwidth { get; set; } = 2;
+
+        /// <summary>
+        /// When true, this track is excluded from playback.
+        /// </summary>
+        public bool Muted { get; set; }
     }
 }
