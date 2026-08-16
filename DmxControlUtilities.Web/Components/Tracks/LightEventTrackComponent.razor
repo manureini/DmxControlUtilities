@@ -1,4 +1,6 @@
 @using DmxControlUtilities.Lib.Models
+@inject IJSRuntime JSRuntime
+@implements IDisposable
 
 <div style="margin-top: 1rem;">
     <div style="display: flex; gap: 0.5rem; align-items: center;">
@@ -7,55 +9,67 @@
         <button class="btn btn-danger btn-sm" @onclick="OnRemove" title="Remove light track">x</button>
     </div>
 
-    <div style="margin-top: 0.5rem; user-select: none;">
-        <TimeScale Duration="Duration" Width="StripWidth" Height="16" MinTickSpacingPx="100" />
+    <div style="width: 88vw; box-sizing: border-box; overflow: hidden; border: 1px solid #ccc; border-radius: 6px; padding: 1rem; background-color: #fff;">
+        <div style="display: flex; gap: 1rem; align-items: stretch; width: 100%;">
+            <div style="flex: 0 0 220px; border: 1px solid #ccc; border-radius: 6px; padding: 1rem;">
+                <div style="display: flex; align-items: center; justify-content: space-between;">
+                    <h6 style="margin: 0;">Event Settings</h6>
+                    <button type="button" class="btn btn-primary btn-sm" style="padding: 0 0.4rem;" title="Add event at current position" @onclick="AddEvent">+</button>
+                </div>
 
-        <div style="position: relative; width: 100%; height: 40px; border: 1px solid #ccc; border-top: none; border-radius: 0 0 4px 4px; background-color: #f5f5f5;"
-             @onmousemove="OnStripMouseMove"
-             @onmouseup="OnStripMouseUp"
-             @onmouseleave="OnStripMouseUp">
-            @foreach (var lightEvent in Track.Events.OrderBy(e => e.Time))
-            {
-                var evt = lightEvent;
+                <label style="display: block; margin-top: 0.5rem;">Device</label>
+                <select class="form-select form-select-sm" style="width: 100%;" @bind="SelectedDeviceId">
+                    @foreach (var device in Devices)
+                    {
+                        <option value="@device.Id">@device.Name (Ch @device.Channel)</option>
+                    }
+                </select>
 
-                <div title="@GetDeviceName(evt.DeviceId) @FormatTime(evt.Time)"
-                     style="position: absolute; top: 4px; bottom: 4px; width: 10px; margin-left: -5px; border: 1px solid @(SelectedEvent?.Id == evt.Id ? "#000" : "#333"); border-radius: 2px; cursor: ew-resize; left: @(EventX(evt).ToString("0.##", System.Globalization.CultureInfo.InvariantCulture))%; background-color: @evt.ColorHex; @(_draggingEvent != null ? "pointer-events: none;" : string.Empty)"
-                     @onmousedown="e => OnEventMouseDown(evt, e)"
-                     @onmousedown:preventDefault="true"></div>
-            }
+                <label style="display: block; margin-top: 0.5rem;">Color</label>
+                <input type="color" class="form-control form-control-color w-100" @bind="SelectedColor" />
 
-            <div style="position: absolute; top: 0; bottom: 0; left: @(CursorX.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture))%; width: 2px; background-color: red; pointer-events: none;"></div>
+                <div style="margin-top: 0.5rem; font-size: 0.75rem; color: #888;">at @FormatTime(Position)</div>
+            </div>
+
+            <div style="flex: 1 1 0; min-width: 0; max-width: 100%; overflow: hidden; display: flex; flex-direction: column;">
+                <div @ref="_scrollContainer" style="overflow-x: auto; overflow-y: hidden; border: 1px solid #ccc; border-radius: 6px; padding: 8px; background-color: #fff; flex: 1 1 auto;">
+                    <TimeScale Duration="Display.Duration" Width="Display.DisplayWidth" Height="16" MinTickSpacingPx="100" />
+                    <div style="position: relative; width: @(Display.DisplayWidth.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture))px; height: 64px; background-color: #f5f5f5; border: 1px solid #ccc; border-top: none; border-radius: 0 0 4px 4px;"
+                         @onmousemove="OnStripMouseMove"
+                         @onmouseup="OnStripMouseUp"
+                         @onmouseleave="OnStripMouseUp"
+                         @onwheel="OnWheel"
+                         @onwheel:preventDefault="true">
+                        @foreach (var lightEvent in Track.Events.OrderBy(e => e.Time))
+                        {
+                            var evt = lightEvent;
+
+                            <div title="@GetDeviceName(evt.DeviceId) @FormatTime(evt.Time)"
+                                 style="position: absolute; top: 4px; bottom: 4px; width: 10px; margin-left: -5px; border: 1px solid @(SelectedEvent?.Id == evt.Id ? "#000" : "#333"); border-radius: 2px; cursor: ew-resize; left: @(EventX(evt).ToString("0.##", System.Globalization.CultureInfo.InvariantCulture))px; background-color: @evt.ColorHex; @(_draggingEvent != null ? "pointer-events: none;" : string.Empty)"
+                                 @onmousedown="e => OnEventMouseDown(evt, e)"
+                                 @onmousedown:preventDefault="true"></div>
+                        }
+
+                        <div style="position: absolute; top: 0; bottom: 0; left: @(CursorX.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture))px; width: 2px; background-color: red; pointer-events: none;"></div>
+                    </div>
+                </div>
+
+                @if (SelectedEvent != null)
+                {
+                    <div style="margin-top: 0.5rem; display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+                        <span>Event @FormatTime(SelectedEvent.Time) - @GetDeviceName(SelectedEvent.DeviceId)</span>
+
+                        <input type="color" class="form-control form-control-color"
+                               value="@SelectedEvent.ColorHex"
+                               @onchange="OnSelectedEventColorChanged" />
+
+                        <button class="btn btn-danger btn-sm" @onclick="RemoveSelectedEvent">Delete</button>
+                        <button class="btn btn-secondary btn-sm" @onclick="() => SelectedEvent = null">Close</button>
+                    </div>
+                }
+            </div>
         </div>
     </div>
-
-    <div style="margin-top: 0.5rem; display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
-        <button class="btn btn-primary" @onclick="AddEvent" title="Add event at current position">+</button>
-
-        <select class="form-select" style="width: auto;" @bind="SelectedDeviceId">
-            @foreach (var device in Devices)
-            {
-                <option value="@device.Id">@device.Name (Ch @device.Channel)</option>
-            }
-        </select>
-
-        <input type="color" class="form-control form-control-color" @bind="SelectedColor" />
-
-        <span>at @FormatTime(Position)</span>
-    </div>
-
-    @if (SelectedEvent != null)
-    {
-        <div style="margin-top: 0.5rem; display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
-            <span>Event @FormatTime(SelectedEvent.Time) - @GetDeviceName(SelectedEvent.DeviceId)</span>
-
-            <input type="color" class="form-control form-control-color"
-                   value="@SelectedEvent.ColorHex"
-                   @onchange="OnSelectedEventColorChanged" />
-
-            <button class="btn btn-danger btn-sm" @onclick="RemoveSelectedEvent">Delete</button>
-            <button class="btn btn-secondary btn-sm" @onclick="() => SelectedEvent = null">Close</button>
-        </div>
-    }
 </div>
 
 @code {
@@ -64,10 +78,10 @@
     public LightEventTrack Track { get; set; } = null!;
 
     /// <summary>
-    /// Duration of the show timeline (max audio track duration). The strip resizes when this changes.
+    /// Shared display state (zoom, duration) so all tracks align in a grid.
     /// </summary>
     [Parameter]
-    public TimeSpan Duration { get; set; }
+    public TrackDisplayState Display { get; set; } = null!;
 
     [Parameter]
     public TimeSpan Position { get; set; }
@@ -101,15 +115,49 @@
 
     private LightEvent? _draggingEvent;
 
-    private const double StripWidth = 2000;
+    private ElementReference _scrollContainer;
 
-    private double CursorX => Duration > TimeSpan.Zero
-        ? Math.Clamp(Position.TotalSeconds / Duration.TotalSeconds, 0, 1) * 100
+    /// <summary>
+    /// Identifies the scroll-sync group this track belongs to (the show). Set once by the page.
+    /// </summary>
+    [Parameter]
+    public string ScrollGroup { get; set; } = "show";
+
+    private double CursorX => Display.Duration > TimeSpan.Zero
+        ? Math.Clamp(Position.TotalSeconds / Display.Duration.TotalSeconds, 0, 1) * Display.DisplayWidth
         : 0;
 
-    private double EventX(LightEvent pEvent) => Duration > TimeSpan.Zero
-        ? Math.Clamp(pEvent.Time.TotalSeconds / Duration.TotalSeconds, 0, 1) * 100
+    private double EventX(LightEvent pEvent) => Display.Duration > TimeSpan.Zero
+        ? Math.Clamp(pEvent.Time.TotalSeconds / Display.Duration.TotalSeconds, 0, 1) * Display.DisplayWidth
         : 0;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+            await JSRuntime.InvokeVoidAsync("registerTrackScroll", ScrollGroup, _scrollContainer);
+    }
+
+    public void Dispose()
+    {
+        _ = JSRuntime.InvokeVoidAsync("unregisterTrackScroll", ScrollGroup, _scrollContainer);
+    }
+
+    private async void OnWheel(WheelEventArgs pArgs)
+    {
+        // Shift or Ctrl + wheel scrolls horizontally instead of zooming.
+        if (pArgs.ShiftKey || pArgs.CtrlKey)
+        {
+            await JSRuntime.InvokeVoidAsync("scrollTrackBy", _scrollContainer, pArgs.DeltaY);
+            return;
+        }
+
+        if (Display.BaseWidth <= 0)
+            return;
+
+        double factor = pArgs.DeltaY < 0 ? 1.2 : 1 / 1.2;
+
+        Display.Zoom = Display.Zoom * factor;
+    }
 
     private string GetDeviceName(Guid pDeviceId)
     {
@@ -182,11 +230,11 @@
 
     private TimeSpan PositionFromOffset(double pOffsetX)
     {
-        if (Duration <= TimeSpan.Zero)
+        if (Display.DisplayWidth <= 0 || Display.Duration <= TimeSpan.Zero)
             return TimeSpan.Zero;
 
-        double fraction = Math.Clamp(pOffsetX / StripWidth, 0, 1);
-        return TimeSpan.FromSeconds(fraction * Duration.TotalSeconds);
+        double fraction = Math.Clamp(pOffsetX / Display.DisplayWidth, 0, 1);
+        return TimeSpan.FromSeconds(fraction * Display.Duration.TotalSeconds);
     }
 
     public static string FormatTime(TimeSpan pTime)

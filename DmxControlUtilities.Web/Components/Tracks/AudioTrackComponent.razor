@@ -1,4 +1,6 @@
 @using DmxControlUtilities.Lib.Models
+@inject IJSRuntime JSRuntime
+@implements IDisposable
 
 <div style="margin-top: 1rem;">
     <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
@@ -73,9 +75,9 @@
             </div>
 
             <div style="flex: 1 1 0; min-width: 0; max-width: 100%; overflow: hidden;">
-                <div style="overflow-x: auto; overflow-y: hidden; border: 1px solid #ccc; border-radius: 6px; padding: 8px; background-color: #fff;">
-                    <TimeScale Duration="State.Duration" Width="State.DisplayWidth" />
-                    <div style="position: relative; width: @(State.DisplayWidth.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture))px; height: 512px; cursor: crosshair; user-select: none;"
+                <div @ref="_scrollContainer" style="overflow-x: auto; overflow-y: hidden; border: 1px solid #ccc; border-radius: 6px; padding: 8px; background-color: #fff;">
+                    <TimeScale Duration="Display.Duration" Width="Display.DisplayWidth" />
+                    <div style="position: relative; width: @(Display.DisplayWidth.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture))px; height: 512px; cursor: crosshair; user-select: none;"
                          @onmousedown="OnCursorMouseDown"
                          @onmousemove="OnCursorMouseMove"
                          @onmouseup="OnCursorMouseUp"
@@ -112,14 +114,17 @@
     [Parameter]
     public AudioTrackState State { get; set; } = null!;
 
+    /// <summary>
+    /// Shared display state (zoom, duration) so all tracks align in a grid.
+    /// </summary>
+    [Parameter]
+    public TrackDisplayState Display { get; set; } = null!;
+
     [Parameter]
     public TimeSpan Position { get; set; }
 
     [Parameter]
     public EventCallback OnSettingsChanged { get; set; }
-
-    [Parameter]
-    public EventCallback<double> OnZoom { get; set; }
 
     [Parameter]
     public EventCallback<CursorDragArgs> OnCursorDrag { get; set; }
@@ -178,6 +183,25 @@
     private double mDraggingFileGrabOffsetX;
     private bool mMoved;
 
+    private ElementReference _scrollContainer;
+
+    /// <summary>
+    /// Identifies the scroll-sync group this track belongs to (the show). Set once by the page.
+    /// </summary>
+    [Parameter]
+    public string ScrollGroup { get; set; } = "show";
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+            await JSRuntime.InvokeVoidAsync("registerTrackScroll", ScrollGroup, _scrollContainer);
+    }
+
+    public void Dispose()
+    {
+        _ = JSRuntime.InvokeVoidAsync("unregisterTrackScroll", ScrollGroup, _scrollContainer);
+    }
+
     private void ToggleMute()
     {
         Track.Muted = !Track.Muted;
@@ -190,15 +214,15 @@
         SelectedFileIdChanged.InvokeAsync(pFile.Id);
     }
 
-    private double CursorX => State.Duration > TimeSpan.Zero
-        ? Position.TotalSeconds / State.Duration.TotalSeconds * State.DisplayWidth
+    private double CursorX => Display.Duration > TimeSpan.Zero
+        ? Position.TotalSeconds / Display.Duration.TotalSeconds * Display.DisplayWidth
         : 0;
 
-    private double SegmentX(TimecodeAudioFile pFile) => pFile.StartOffset.TotalSeconds * State.PixelsPerSecond;
+    private double SegmentX(TimecodeAudioFile pFile) => pFile.StartOffset.TotalSeconds * Display.PixelsPerSecond;
 
     private double SegmentWidth(TimecodeAudioFile pFile)
     {
-        return Math.Max(0, FileDuration(pFile).TotalSeconds * State.PixelsPerSecond);
+        return Math.Max(0, FileDuration(pFile).TotalSeconds * Display.PixelsPerSecond);
     }
 
     private TimeSpan FileDuration(TimecodeAudioFile pFile)
@@ -228,16 +252,21 @@
         return null;
     }
 
-    private void OnWheel(WheelEventArgs pArgs)
+    private async void OnWheel(WheelEventArgs pArgs)
     {
-        if (State.BaseWidth <= 0)
+        // Shift or Ctrl + wheel scrolls horizontally instead of zooming.
+        if (pArgs.ShiftKey || pArgs.CtrlKey)
+        {
+            await JSRuntime.InvokeVoidAsync("scrollTrackBy", _scrollContainer, pArgs.DeltaY);
+            return;
+        }
+
+        if (Display.BaseWidth <= 0)
             return;
 
         double factor = pArgs.DeltaY < 0 ? 1.2 : 1 / 1.2;
 
-        State.Zoom = Math.Clamp(State.Zoom * factor, 1, 50);
-
-        OnZoom.InvokeAsync(State.Zoom);
+        Display.Zoom = Display.Zoom * factor;
     }
 
     private void OnSettingChanged(ChangeEventArgs pArgs, Action<double> pApply)
@@ -313,11 +342,11 @@
 
     private TimeSpan PositionFromOffset(double pOffsetX)
     {
-        if (State.DisplayWidth <= 0 || State.Duration <= TimeSpan.Zero)
+        if (Display.DisplayWidth <= 0 || Display.Duration <= TimeSpan.Zero)
             return TimeSpan.Zero;
 
-        double fraction = Math.Clamp(pOffsetX / State.DisplayWidth, 0, 1);
-        return TimeSpan.FromSeconds(fraction * State.Duration.TotalSeconds);
+        double fraction = Math.Clamp(pOffsetX / Display.DisplayWidth, 0, 1);
+        return TimeSpan.FromSeconds(fraction * Display.Duration.TotalSeconds);
     }
 
     public record CursorDragArgs(double OffsetX, bool IsFinished);

@@ -72,9 +72,10 @@ else
 
         <AudioTrackComponent Track="track"
                              State="state"
+                             Display="_displayState"
+                             ScrollGroup="@ScrollGroupId"
                              Position="GetPosition(track.Id)"
                              OnSettingsChanged="() => RegenerateImages(track)"
-                             OnZoom="_ => RegenerateZoomImages(track)"
                              OnCursorDrag="args => OnCursorDrag(track, args)"
                              OnFileDrag="args => OnFileDrag(track, args)"
                              @bind-SelectedFileId="_selectedAudioFileId"
@@ -90,7 +91,8 @@ else
         var track = lightTrack;
 
         <LightEventTrackComponent Track="track"
-                                  Duration="GetShowDuration()"
+                                  Display="_displayState"
+                                  ScrollGroup="@ScrollGroupId"
                                   Position="ClockService.Position"
                                   Devices="_devices"
                                   @bind-SelectedDeviceId="_selectedDeviceId"
@@ -120,6 +122,9 @@ else
     private int _regenerateVersion;
     private long _zoomVersion;
 
+    // Shared zoom/duration/scroll state so all audio and light tracks align in a grid.
+    private readonly TrackDisplayState _displayState = new();
+
     private Guid? _playbackTrackId;
     private bool _isDraggingCursor;
 
@@ -134,6 +139,11 @@ else
     private LightEvent? _selectedEvent;
 
     private const int BaseMaxWidth = 2000;
+
+    /// <summary>
+    /// Scroll-sync group id shared by all tracks of this show instance.
+    /// </summary>
+    private string ScrollGroupId => "show-" + Id;
 
     private AudioTrackState GetState(Guid pTrackId)
     {
@@ -219,13 +229,30 @@ else
     }
 
     /// <summary>
-    /// Recalculates the spectrograms in the background with a time resolution matching the current zoom level.
+    /// Handles a change of the shared zoom level by regenerating all tracks' spectrograms
+    /// at a matching time resolution.
+    /// </summary>
+    private void OnSharedZoomChanged()
+    {
+        if (_show == null)
+            return;
+
+        foreach (var track in _show.AudioTracks)
+        {
+            RegenerateZoomImages(track);
+        }
+
+        InvokeAsync(StateHasChanged);
+    }
+
+    /// <summary>
+    /// Recalculates the spectrograms in the background with a time resolution matching the shared zoom level.
     /// </summary>
     private void RegenerateZoomImages(TimecodeAudioTrack pTrack)
     {
         var state = GetState(pTrack.Id);
 
-        double targetZoom = Math.Clamp(Math.Pow(2, Math.Ceiling(Math.Log2(state.Zoom))), 1, 16);
+        double targetZoom = Math.Clamp(Math.Pow(2, Math.Ceiling(Math.Log2(_displayState.Zoom))), 1, 16);
 
         if (Math.Abs(targetZoom - state.RenderZoom) < 0.01)
             return;
@@ -273,6 +300,10 @@ else
             return;
 
         LightTrackService.SetShow(_show);
+
+        _displayState.BaseWidth = BaseMaxWidth;
+        _displayState.ZoomChanged -= OnSharedZoomChanged;
+        _displayState.ZoomChanged += OnSharedZoomChanged;
 
         RefreshDevices();
 
@@ -457,6 +488,7 @@ else
     {
         var duration = ComputeShowDuration();
         ClockService.SetDuration(duration);
+        _displayState.Duration = duration;
 
         if (_show != null)
         {
@@ -802,13 +834,11 @@ else
 
     private TimeSpan PositionFromOffset(Guid pTrackId, double pOffsetX)
     {
-        var state = GetState(pTrackId);
-
-        if (state.DisplayWidth <= 0)
+        if (_displayState.DisplayWidth <= 0 || _displayState.Duration <= TimeSpan.Zero)
             return TimeSpan.Zero;
 
-        double fraction = Math.Clamp(pOffsetX / state.DisplayWidth, 0, 1);
-        return TimeSpan.FromSeconds(fraction * state.Duration.TotalSeconds);
+        double fraction = Math.Clamp(pOffsetX / _displayState.DisplayWidth, 0, 1);
+        return TimeSpan.FromSeconds(fraction * _displayState.Duration.TotalSeconds);
     }
 
     public void Dispose()
@@ -817,6 +847,8 @@ else
         {
             state.DurationChanged -= OnTrackDurationChanged;
         }
+
+        _displayState.ZoomChanged -= OnSharedZoomChanged;
 
         _timer?.Stop();
         _timer?.Dispose();
