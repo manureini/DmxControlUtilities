@@ -98,6 +98,7 @@ else
                                   @bind-SelectedDeviceId="_selectedDeviceId"
                                   @bind-SelectedColor="_selectedColor"
                                   @bind-SelectedEvent="_selectedEvent"
+                                  OnCursorDrag="OnLightCursorDrag"
                                   OnChanged="OnLightTrackChanged"
                                   OnRemove="() => RemoveTrack(track)" />
     }
@@ -748,7 +749,17 @@ else
 
     private void OnCursorDrag(TimecodeAudioTrack pTrack, AudioTrackComponent.CursorDragArgs pArgs)
     {
-        var position = PositionFromOffset(pTrack.Id, pArgs.OffsetX);
+        SeekFromCursorDrag(pArgs);
+    }
+
+    private void OnLightCursorDrag(AudioTrackComponent.CursorDragArgs pArgs)
+    {
+        SeekFromCursorDrag(pArgs);
+    }
+
+    private void SeekFromCursorDrag(AudioTrackComponent.CursorDragArgs pArgs)
+    {
+        var position = PositionFromOffset(Guid.Empty, pArgs.OffsetX);
 
         _isDraggingCursor = !pArgs.IsFinished;
 

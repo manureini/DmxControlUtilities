@@ -32,7 +32,8 @@
             <div style="flex: 1 1 0; min-width: 0; max-width: 100%; overflow: hidden; display: flex; flex-direction: column;">
                 <div @ref="_scrollContainer" style="overflow-x: auto; overflow-y: hidden; border: 1px solid #ccc; border-radius: 6px; padding: 8px; background-color: #fff; flex: 1 1 auto;">
                     <TimeScale Duration="Display.Duration" Width="Display.DisplayWidth" Height="16" MinTickSpacingPx="100" />
-                    <div style="position: relative; width: @(Display.DisplayWidth.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture))px; height: 64px; background-color: #f5f5f5; border: 1px solid #ccc; border-top: none; border-radius: 0 0 4px 4px;"
+                    <div style="position: relative; width: @(Display.DisplayWidth.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture))px; height: 64px; background-color: #f5f5f5; border: 1px solid #ccc; border-top: none; border-radius: 0 0 4px 4px; cursor: crosshair; user-select: none;"
+                         @onmousedown="OnStripMouseDown"
                          @onmousemove="OnStripMouseMove"
                          @onmouseup="OnStripMouseUp"
                          @onmouseleave="OnStripMouseUp"
@@ -111,7 +112,14 @@
     [Parameter]
     public EventCallback OnRemove { get; set; }
 
+    /// <summary>
+    /// Raised while the user clicks/drags on the strip to move the playback cursor.
+    /// </summary>
+    [Parameter]
+    public EventCallback<AudioTrackComponent.CursorDragArgs> OnCursorDrag { get; set; }
+
     private LightEvent? _draggingEvent;
+    private bool _isDraggingCursor;
 
     private ElementReference _scrollContainer;
 
@@ -187,23 +195,46 @@
         SelectedEventChanged.InvokeAsync(SelectedEvent);
     }
 
-    private void OnStripMouseMove(MouseEventArgs pArgs)
+    private void OnStripMouseDown(MouseEventArgs pArgs)
     {
-        if (_draggingEvent == null)
+        // Clicking on empty strip (not on an event) starts a cursor seek/drag.
+        if (_draggingEvent != null)
             return;
 
-        _draggingEvent.Time = PositionFromOffset(pArgs.OffsetX);
-        OnChanged.InvokeAsync();
+        _isDraggingCursor = true;
+        OnCursorDrag.InvokeAsync(new AudioTrackComponent.CursorDragArgs(pArgs.OffsetX, false));
+    }
+
+    private void OnStripMouseMove(MouseEventArgs pArgs)
+    {
+        if (_draggingEvent != null)
+        {
+            _draggingEvent.Time = PositionFromOffset(pArgs.OffsetX);
+            OnChanged.InvokeAsync();
+            return;
+        }
+
+        if (!_isDraggingCursor)
+            return;
+
+        OnCursorDrag.InvokeAsync(new AudioTrackComponent.CursorDragArgs(pArgs.OffsetX, false));
     }
 
     private void OnStripMouseUp(MouseEventArgs pArgs)
     {
-        if (_draggingEvent == null)
+        if (_draggingEvent != null)
+        {
+            _draggingEvent.Time = PositionFromOffset(pArgs.OffsetX);
+            _draggingEvent = null;
+            OnChanged.InvokeAsync();
+            return;
+        }
+
+        if (!_isDraggingCursor)
             return;
 
-        _draggingEvent.Time = PositionFromOffset(pArgs.OffsetX);
-        _draggingEvent = null;
-        OnChanged.InvokeAsync();
+        _isDraggingCursor = false;
+        OnCursorDrag.InvokeAsync(new AudioTrackComponent.CursorDragArgs(pArgs.OffsetX, true));
     }
 
     private void OnSelectedEventColorChanged(ChangeEventArgs pArgs)
