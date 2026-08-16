@@ -27,6 +27,7 @@ namespace DmxControlUtilities.Web
             builder.Services.AddSingleton<TrackerLocationService>();
             builder.Services.AddSingleton<AudioSpectrogramService>();
             builder.Services.AddSingleton<AudioPlaybackService>();
+            builder.Services.AddSingleton<PlaybackClockService>();
             builder.Services.AddSingleton<DmxControlUtilities.Lib.Services.DmxFtdiService>();
             builder.Services.AddSingleton<DmxControlUtilities.Lib.Services.DeviceService>();
             builder.Services.AddSingleton<DmxControlUtilities.Lib.Services.LightTrackService>();

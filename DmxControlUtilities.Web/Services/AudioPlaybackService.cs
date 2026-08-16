@@ -15,69 +15,6 @@ namespace DmxControlUtilities.Web.Services
         // sought and disposed. Each entry maps a sample-provider input to its source stream.
         private readonly List<(ISampleProvider Provider, WaveStream Source)> _inputs = new();
 
-        // WaveOutEvent.GetPosition() only counts bytes played since Init and is not affected by
-        // repositioning the source streams. These track the last seek so Position stays correct.
-        private TimeSpan _seekPosition;
-        private long _outputBytesAtSeek;
-
-        /// <summary>
-        /// True when an output device has been initialized with loaded sources.
-        /// While false, <see cref="Position"/> has no meaningful value.
-        /// </summary>
-        public bool IsLoaded
-        {
-            get
-            {
-                lock (_lock)
-                {
-                    return _output != null;
-                }
-            }
-        }
-
-        /// <summary>
-        /// The total duration of the loaded sources (the longest track).
-        /// </summary>
-        public TimeSpan Duration
-        {
-            get
-            {
-                lock (_lock)
-                {
-                    return _inputs.Count == 0
-                        ? TimeSpan.Zero
-                        : _inputs.Max(i => i.Source.TotalTime);
-                }
-            }
-        }
-
-        /// <summary>
-        /// The current playback position, taken from the output device so it stays
-        /// accurate while mixing multiple tracks. Offset by the last seek, because the
-        /// output device keeps counting from where it was initialized.
-        /// </summary>
-        public TimeSpan Position
-        {
-            get
-            {
-                lock (_lock)
-                {
-                    if (_output == null || _mixer == null)
-                        return _seekPosition;
-
-                    long bytes = _output.GetPosition() - _outputBytesAtSeek;
-
-                    if (bytes < 0)
-                        bytes = 0;
-
-                    long frames = bytes / _mixer.WaveFormat.BlockAlign;
-                    var elapsed = TimeSpan.FromSeconds((double)frames / _mixer.WaveFormat.SampleRate);
-
-                    return _seekPosition + elapsed;
-                }
-            }
-        }
-
         public bool IsPlaying
         {
             get
@@ -220,11 +157,6 @@ namespace DmxControlUtilities.Web.Services
                 if (pPosition < TimeSpan.Zero)
                     pPosition = TimeSpan.Zero;
 
-                // Remember where we sought to and the device counter at that moment, so
-                // Position keeps reporting the seeked position plus what played since.
-                _seekPosition = pPosition;
-                _outputBytesAtSeek = _output?.GetPosition() ?? 0;
-
                 foreach (var (_, source) in _inputs)
                 {
                     long target = (long)(pPosition.TotalSeconds * source.WaveFormat.SampleRate) * source.WaveFormat.BlockAlign;
@@ -272,10 +204,6 @@ namespace DmxControlUtilities.Web.Services
 
             _mixer?.RemoveAllMixerInputs();
             _mixer = null;
-
-            // A new output device starts counting at zero again.
-            _seekPosition = TimeSpan.Zero;
-            _outputBytesAtSeek = 0;
         }
 
         public void Dispose()
