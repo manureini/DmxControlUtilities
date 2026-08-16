@@ -1,7 +1,9 @@
+using System.Text.Json.Serialization;
+
 namespace DmxControlUtilities.Lib.Models
 {
     /// <summary>
-    /// A timecode show contains an audio track and the light events which are applied while the track is played.
+    /// A timecode show contains tracks (audio tracks and light event tracks) which are applied while the show is played.
     /// </summary>
     public class TimecodeShow
     {
@@ -9,22 +11,25 @@ namespace DmxControlUtilities.Lib.Models
 
         public string Name { get; set; } = string.Empty;
 
-        /// <summary>
-        /// Display name of the imported audio file.
-        /// </summary>
-        public string AudioFileName { get; set; } = string.Empty;
+        [JsonConverter(typeof(TimecodeShowTrackJsonConverter))]
+        public List<ITimecodeShowTrack> Tracks { get; set; } = new();
 
         /// <summary>
-        /// Content of the audio file. The stream should be seekable so it can be read more than once.
+        /// All audio tracks of this show.
         /// </summary>
-        public Stream? AudioFilePath { get; set; }
+        [JsonIgnore]
+        public IEnumerable<TimecodeAudioTrack> AudioTracks => Tracks.OfType<TimecodeAudioTrack>();
 
-        public double Threshold { get; set; } = 0;
+        /// <summary>
+        /// All light event tracks of this show.
+        /// </summary>
+        [JsonIgnore]
+        public IEnumerable<LightEventTrack> LightEventTracks => Tracks.OfType<LightEventTrack>();
 
-        public double Ratio { get; set; } = 1;
-
-        public double Bandwidth { get; set; } = 2;
-
-        public List<LightEvent> Events { get; set; } = new();
+        /// <summary>
+        /// All light events of all light event tracks of this show.
+        /// </summary>
+        [JsonIgnore]
+        public IEnumerable<LightEvent> AllEvents => LightEventTracks.SelectMany(t => t.Events);
     }
 }

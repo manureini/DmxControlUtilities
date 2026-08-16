@@ -16,11 +16,16 @@
 
 <MGrid T="ShowModel" DataSource="mShows" EnableAdding="false" EnableEditing="false" EnableDeleting="false" EnableFilterRow="false" EnableGrouping="false" EnableExport="false" EnableImport="false" EnableSaveState="false">
     <MGridColumn Property="@nameof(ShowModel.Name)" HeaderText="Name" PropertyType="typeof(string)" />
-    <MGridColumn Property="@nameof(ShowModel.AudioFileName)" HeaderText="Audio File" PropertyType="typeof(string)" />
+
+    <MGridComplexColumn T="ShowModel" Identifier="AudioFiles" HeaderText="Audio Files">
+        <CellTemplate Context="show">
+            <span>@string.Join(", ", show.AudioTracks.Select(t => string.IsNullOrEmpty(t.AudioFileName) ? "-" : t.AudioFileName))</span>
+        </CellTemplate>
+    </MGridComplexColumn>
 
     <MGridComplexColumn T="ShowModel" Identifier="EventCount" HeaderText="Events">
         <CellTemplate Context="show">
-            <span>@show.Events.Count</span>
+            <span>@show.AllEvents.Count()</span>
         </CellTemplate>
     </MGridComplexColumn>
 

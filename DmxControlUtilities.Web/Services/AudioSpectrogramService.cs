@@ -1,3 +1,4 @@
+using DmxControlUtilities.Lib.Models;
 using MathNet.Numerics;
 using MathNet.Numerics.IntegralTransforms;
 using NAudio.Wave;
@@ -8,6 +9,43 @@ namespace DmxControlUtilities.Web.Services
     public class AudioSpectrogramService
     {
         private const int FftSize = 2048;
+
+        /// <summary>
+        /// Returns the duration of an audio stream without fully decoding it.
+        /// </summary>
+        public TimeSpan GetAudioDuration(Stream pAudioStream)
+        {
+            if (pAudioStream.CanSeek)
+                pAudioStream.Position = 0;
+
+            using var reader = new StreamMediaFoundationReader(pAudioStream);
+
+            var duration = reader.TotalTime;
+
+            if (pAudioStream.CanSeek)
+                pAudioStream.Position = 0;
+
+            return duration;
+        }
+
+        /// <summary>
+        /// Recalculates the start offsets of the files of an audio track
+        /// (each file starts after the duration of all previous files).
+        /// </summary>
+        public void UpdateFileOffsets(TimecodeAudioTrack pTrack)
+        {
+            var position = TimeSpan.Zero;
+
+            foreach (var file in pTrack.AudioFiles)
+            {
+                file.StartOffset = position;
+
+                if (file.File != null)
+                {
+                    position += GetAudioDuration(file.File);
+                }
+            }
+        }
 
         private Stream? _cachedStream;
         private int _cachedMaxWidth;

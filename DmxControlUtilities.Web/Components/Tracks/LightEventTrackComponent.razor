@@ -1,0 +1,196 @@
+@using DmxControlUtilities.Lib.Models
+
+<div style="margin-top: 1rem;">
+    <div style="display: flex; gap: 0.5rem; align-items: center;">
+        <input class="form-control form-control-sm" style="width: auto;" @bind="Track.Name" />
+        <span style="color: #888; font-size: 0.9rem;">@Track.Events.Count events</span>
+        <button class="btn btn-danger btn-sm" @onclick="OnRemove" title="Remove light track">x</button>
+    </div>
+
+    <div style="margin-top: 0.5rem; user-select: none;">
+        <TimeScale Duration="Duration" Width="StripWidth" Height="16" MinTickSpacingPx="100" />
+
+        <div style="position: relative; width: 100%; height: 40px; border: 1px solid #ccc; border-top: none; border-radius: 0 0 4px 4px; background-color: #f5f5f5;"
+             @onmousemove="OnStripMouseMove"
+             @onmouseup="OnStripMouseUp"
+             @onmouseleave="OnStripMouseUp">
+            @foreach (var lightEvent in Track.Events.OrderBy(e => e.Time))
+            {
+                var evt = lightEvent;
+
+                <div title="@GetDeviceName(evt.DeviceId) @FormatTime(evt.Time)"
+                     style="position: absolute; top: 4px; bottom: 4px; width: 10px; margin-left: -5px; border: 1px solid @(SelectedEvent?.Id == evt.Id ? "#000" : "#333"); border-radius: 2px; cursor: ew-resize; left: @(EventX(evt).ToString("0.##", System.Globalization.CultureInfo.InvariantCulture))%; background-color: @evt.ColorHex; @(_draggingEvent != null ? "pointer-events: none;" : string.Empty)"
+                     @onmousedown="e => OnEventMouseDown(evt, e)"
+                     @onmousedown:preventDefault="true"></div>
+            }
+
+            <div style="position: absolute; top: 0; bottom: 0; left: @(CursorX.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture))%; width: 2px; background-color: red; pointer-events: none;"></div>
+        </div>
+    </div>
+
+    <div style="margin-top: 0.5rem; display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+        <button class="btn btn-primary" @onclick="AddEvent" title="Add event at current position">+</button>
+
+        <select class="form-select" style="width: auto;" @bind="SelectedDeviceId">
+            @foreach (var device in Devices)
+            {
+                <option value="@device.Id">@device.Name (Ch @device.Channel)</option>
+            }
+        </select>
+
+        <input type="color" class="form-control form-control-color" @bind="SelectedColor" />
+
+        <span>at @FormatTime(Position)</span>
+    </div>
+
+    @if (SelectedEvent != null)
+    {
+        <div style="margin-top: 0.5rem; display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+            <span>Event @FormatTime(SelectedEvent.Time) - @GetDeviceName(SelectedEvent.DeviceId)</span>
+
+            <input type="color" class="form-control form-control-color"
+                   value="@SelectedEvent.ColorHex"
+                   @onchange="OnSelectedEventColorChanged" />
+
+            <button class="btn btn-danger btn-sm" @onclick="RemoveSelectedEvent">Delete</button>
+            <button class="btn btn-secondary btn-sm" @onclick="() => SelectedEvent = null">Close</button>
+        </div>
+    }
+</div>
+
+@code {
+
+    [Parameter]
+    public LightEventTrack Track { get; set; } = null!;
+
+    /// <summary>
+    /// Duration of the show timeline (max audio track duration). The strip resizes when this changes.
+    /// </summary>
+    [Parameter]
+    public TimeSpan Duration { get; set; }
+
+    [Parameter]
+    public TimeSpan Position { get; set; }
+
+    [Parameter]
+    public IReadOnlyList<Device> Devices { get; set; } = new List<Device>();
+
+    [Parameter]
+    public Guid SelectedDeviceId { get; set; }
+
+    [Parameter]
+    public EventCallback<Guid> SelectedDeviceIdChanged { get; set; }
+
+    [Parameter]
+    public string SelectedColor { get; set; } = "#ffffff";
+
+    [Parameter]
+    public EventCallback<string> SelectedColorChanged { get; set; }
+
+    [Parameter]
+    public LightEvent? SelectedEvent { get; set; }
+
+    [Parameter]
+    public EventCallback<LightEvent?> SelectedEventChanged { get; set; }
+
+    [Parameter]
+    public EventCallback OnChanged { get; set; }
+
+    [Parameter]
+    public EventCallback OnRemove { get; set; }
+
+    private LightEvent? _draggingEvent;
+
+    private const double StripWidth = 2000;
+
+    private double CursorX => Duration > TimeSpan.Zero
+        ? Math.Clamp(Position.TotalSeconds / Duration.TotalSeconds, 0, 1) * 100
+        : 0;
+
+    private double EventX(LightEvent pEvent) => Duration > TimeSpan.Zero
+        ? Math.Clamp(pEvent.Time.TotalSeconds / Duration.TotalSeconds, 0, 1) * 100
+        : 0;
+
+    private string GetDeviceName(Guid pDeviceId)
+    {
+        return Devices.FirstOrDefault(d => d.Id == pDeviceId)?.Name ?? "?";
+    }
+
+    private void AddEvent()
+    {
+        if (SelectedDeviceId == Guid.Empty)
+            return;
+
+        var lightEvent = new LightEvent
+        {
+            DeviceId = SelectedDeviceId,
+            Time = Position,
+            ColorHex = SelectedColor
+        };
+
+        Track.Events.Add(lightEvent);
+        SelectedEvent = lightEvent;
+        SelectedEventChanged.InvokeAsync(SelectedEvent);
+        OnChanged.InvokeAsync();
+    }
+
+    private void OnEventMouseDown(LightEvent pEvent, MouseEventArgs pArgs)
+    {
+        SelectedEvent = pEvent;
+        _draggingEvent = pEvent;
+        SelectedEventChanged.InvokeAsync(SelectedEvent);
+    }
+
+    private void OnStripMouseMove(MouseEventArgs pArgs)
+    {
+        if (_draggingEvent == null)
+            return;
+
+        _draggingEvent.Time = PositionFromOffset(pArgs.OffsetX);
+        OnChanged.InvokeAsync();
+    }
+
+    private void OnStripMouseUp(MouseEventArgs pArgs)
+    {
+        if (_draggingEvent == null)
+            return;
+
+        _draggingEvent.Time = PositionFromOffset(pArgs.OffsetX);
+        _draggingEvent = null;
+        OnChanged.InvokeAsync();
+    }
+
+    private void OnSelectedEventColorChanged(ChangeEventArgs pArgs)
+    {
+        if (SelectedEvent == null)
+            return;
+
+        SelectedEvent.ColorHex = pArgs.Value?.ToString() ?? SelectedEvent.ColorHex;
+        OnChanged.InvokeAsync();
+    }
+
+    private void RemoveSelectedEvent()
+    {
+        if (SelectedEvent == null)
+            return;
+
+        Track.Events.RemoveAll(e => e.Id == SelectedEvent.Id);
+        SelectedEvent = null;
+        SelectedEventChanged.InvokeAsync(SelectedEvent);
+        OnChanged.InvokeAsync();
+    }
+
+    private TimeSpan PositionFromOffset(double pOffsetX)
+    {
+        if (Duration <= TimeSpan.Zero)
+            return TimeSpan.Zero;
+
+        double fraction = Math.Clamp(pOffsetX / StripWidth, 0, 1);
+        return TimeSpan.FromSeconds(fraction * Duration.TotalSeconds);
+    }
+
+    public static string FormatTime(TimeSpan pTime)
+    {
+        return pTime.ToString(@"mm\:ss\.f");
+    }
+}

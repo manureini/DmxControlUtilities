@@ -1,3 +1,4 @@
+using DmxControlUtilities.Lib.Models;
 using NAudio.Wave;
 
 namespace DmxControlUtilities.Web.Services
@@ -39,6 +40,32 @@ namespace DmxControlUtilities.Web.Services
                 {
                     return _output?.PlaybackState == PlaybackState.Playing;
                 }
+            }
+        }
+
+        /// <summary>
+        /// Loads all audio files of an audio track for playback at their start offsets.
+        /// Ranges between files are silent. The total duration spans to the end of the last file.
+        /// </summary>
+        public void Load(TimecodeAudioTrack pTrack)
+        {
+            var files = pTrack.AudioFiles
+                .Where(f => f.File != null)
+                .Select(f => (f.File!, f.StartOffset))
+                .ToList();
+
+            var playlist = PlaylistWaveStream.Create(files);
+
+            if (playlist == null)
+                return;
+
+            lock (_lock)
+            {
+                DisposePlayback();
+
+                _reader = playlist;
+                _output = new WaveOutEvent();
+                _output.Init(_reader);
             }
         }
 

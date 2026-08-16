@@ -1,0 +1,306 @@
+@using DmxControlUtilities.Lib.Models
+
+<div style="margin-top: 1rem;">
+    <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+        <strong>@Track.Name</strong>
+        <button class="btn btn-danger btn-sm" @onclick="OnRemove" title="Remove audio track">x</button>
+    </div>
+
+    <div style="margin: 0.25rem 0; display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+        @for (int i = 0; i < Track.AudioFiles.Count; i++)
+        {
+            var index = i;
+            var file = Track.AudioFiles[index];
+
+            <span style="display: inline-flex; gap: 0.25rem; align-items: center; border: 1px solid @(SelectedFileId == file.Id ? "#0d6efd" : "#ccc"); border-radius: 4px; padding: 0.1rem 0.4rem; cursor: pointer; background-color: @(SelectedFileId == file.Id ? "#cfe2ff" : "#f8f8f8");"
+                  @onclick="() => SelectFile(file)">
+                <span>@file.FileName (@FormatTime(file.StartOffset))</span>
+                <button class="btn btn-secondary btn-sm" style="padding: 0 0.3rem;" disabled="@(index == 0)" @onclick="() => OnMoveFile.InvokeAsync((file.Id, -1))" @onclick:stopPropagation="true" title="Move up">&uarr;</button>
+                <button class="btn btn-secondary btn-sm" style="padding: 0 0.3rem;" disabled="@(index == Track.AudioFiles.Count - 1)" @onclick="() => OnMoveFile.InvokeAsync((file.Id, 1))" @onclick:stopPropagation="true" title="Move down">&darr;</button>
+                <button class="btn btn-danger btn-sm" style="padding: 0 0.3rem;" @onclick="() => OnRemoveFile.InvokeAsync(file.Id)" @onclick:stopPropagation="true" title="Remove file">x</button>
+            </span>
+        }
+    </div>
+
+    <div style="margin-bottom: 0.5rem;">
+        <button class="btn btn-primary" @onclick="OnPlayPause" title="@(IsPlaying ? "Pause" : "Play")">
+            @if (IsPlaying)
+            {
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16" style="vertical-align: -0.125em;">
+                    <path d="M5.5 3.5A1.5 1.5 0 0 1 7 5v6a1.5 1.5 0 0 1-3 0V5a1.5 1.5 0 0 1 1.5-1.5zm5 0A1.5 1.5 0 0 1 12 5v6a1.5 1.5 0 0 1-3 0V5a1.5 1.5 0 0 1 1.5-1.5z" />
+                </svg>
+            }
+            else
+            {
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16" style="vertical-align: -0.125em;">
+                    <path d="m11.596 8.697-6.363 3.692c-.54.313-1.233-.066-1.233-.697V4.308c0-.63.692-1.01 1.233-.696l6.363 3.692a.802.802 0 0 1 0 1.393z" />
+                </svg>
+            }
+        </button>
+        <button class="btn btn-secondary" @onclick="OnStop" title="Stop">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16" style="vertical-align: -0.125em;">
+                <path d="M5 3.5h6A1.5 1.5 0 0 1 12.5 5v6a1.5 1.5 0 0 1-1.5 1.5H5A1.5 1.5 0 0 1 3.5 11V5A1.5 1.5 0 0 1 5 3.5z" />
+            </svg>
+        </button>
+        <span style="margin-left: 1rem;">@FormatTime(Position) / @FormatTime(State.Duration)</span>
+    </div>
+
+    <div style="width: 88vw; box-sizing: border-box; overflow: hidden; border: 1px solid #ccc; border-radius: 6px; padding: 1rem; background-color: #fff;">
+        <div style="display: flex; gap: 1rem; align-items: flex-start; width: 100%;">
+            <div style="flex: 0 0 220px; border: 1px solid #ccc; border-radius: 6px; padding: 1rem;">
+                <h6>Image Settings</h6>
+
+                <label style="display: block; margin-top: 0.5rem;">Threshold: @Track.Threshold.ToString("0.00")</label>
+                <input type="range" min="0" max="0.9" step="0.01" style="width: 100%;"
+                       value="@Track.Threshold.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)"
+                       @oninput="e => OnSettingChanged(e, v => Track.Threshold = v)" />
+                <div style="display: flex; justify-content: space-between; font-size: 0.75rem; color: #888;"><span>0</span><span>0.9</span></div>
+
+                <label style="display: block; margin-top: 0.5rem;">Ratio: @Track.Ratio.ToString("0.00")</label>
+                <input type="range" min="0.25" max="4" step="0.05" style="width: 100%;"
+                       value="@Track.Ratio.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)"
+                       @oninput="e => OnSettingChanged(e, v => Track.Ratio = v)" />
+                <div style="display: flex; justify-content: space-between; font-size: 0.75rem; color: #888;"><span>0.25</span><span>4</span></div>
+
+                <label style="display: block; margin-top: 0.5rem;">Bandwidth: @Track.Bandwidth.ToString("0.00")</label>
+                <input type="range" min="1" max="3" step="0.05" style="width: 100%;"
+                       value="@Track.Bandwidth.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)"
+                       @oninput="e => OnSettingChanged(e, v => Track.Bandwidth = v)" />
+                <div style="display: flex; justify-content: space-between; font-size: 0.75rem; color: #888;"><span>1</span><span>3</span></div>
+            </div>
+
+            <div style="flex: 1 1 0; min-width: 0; max-width: 100%; overflow: hidden;">
+                <div style="overflow-x: auto; overflow-y: hidden; border: 1px solid #ccc; border-radius: 6px; padding: 8px; background-color: #fff;">
+                    <TimeScale Duration="State.Duration" Width="State.DisplayWidth" />
+                    <div style="position: relative; width: @(State.DisplayWidth.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture))px; height: 512px; cursor: crosshair; user-select: none;"
+                         @onmousedown="OnCursorMouseDown"
+                         @onmousemove="OnCursorMouseMove"
+                         @onmouseup="OnCursorMouseUp"
+                         @onmouseleave="OnCursorMouseUp"
+                         @onwheel="OnWheel"
+                         @onwheel:preventDefault="true">
+                        @for (int i = 0; i < Track.AudioFiles.Count && i < State.ImageDataUrls.Count; i++)
+                        {
+                            var file = Track.AudioFiles[i];
+                            var imageDataUrl = State.ImageDataUrls[i];
+
+                            if (imageDataUrl == null)
+                                continue;
+
+                            <img src="@imageDataUrl"
+                                 title="@file.FileName (@FormatTime(file.StartOffset)) - hold Shift and drag to move"
+                                 style="position: absolute; top: 0; height: 512px; left: @(SegmentX(file).ToString("0.##", System.Globalization.CultureInfo.InvariantCulture))px; width: @(SegmentWidth(file).ToString("0.##", System.Globalization.CultureInfo.InvariantCulture))px; display: block; pointer-events: none;"
+                                 draggable="false"
+                                 alt="Spectrogram @file.FileName" />
+                        }
+                        <div style="position: absolute; top: 0; bottom: 0; left: @(CursorX.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture))px; width: 2px; background-color: red; pointer-events: none;"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+
+    [Parameter]
+    public TimecodeAudioTrack Track { get; set; } = null!;
+
+    [Parameter]
+    public AudioTrackState State { get; set; } = null!;
+
+    [Parameter]
+    public TimeSpan Position { get; set; }
+
+    [Parameter]
+    public bool IsPlaying { get; set; }
+
+    [Parameter]
+    public EventCallback OnPlayPause { get; set; }
+
+    [Parameter]
+    public EventCallback OnStop { get; set; }
+
+    [Parameter]
+    public EventCallback OnSettingsChanged { get; set; }
+
+    [Parameter]
+    public EventCallback<double> OnZoom { get; set; }
+
+    [Parameter]
+    public EventCallback<CursorDragArgs> OnCursorDrag { get; set; }
+
+    [Parameter]
+    public EventCallback OnRemove { get; set; }
+
+    [Parameter]
+    public EventCallback<Guid> OnRemoveFile { get; set; }
+
+    [Parameter]
+    public EventCallback<(Guid FileId, int Direction)> OnMoveFile { get; set; }
+
+    /// <summary>
+    /// The currently selected audio file (highlighted in the file list).
+    /// </summary>
+    [Parameter]
+    public Guid SelectedFileId { get; set; }
+
+    [Parameter]
+    public EventCallback<Guid> SelectedFileIdChanged { get; set; }
+
+    /// <summary>
+    /// Raised while a file is dragged on the time axis. The time is the new start offset of the file.
+    /// </summary>
+    [Parameter]
+    public EventCallback<FileDragArgs> OnFileDrag { get; set; }
+
+    private bool _isDraggingCursor;
+    private TimecodeAudioFile? mDraggingFile;
+    private double mDraggingFileGrabOffsetX;
+    private bool mMoved;
+
+    private void SelectFile(TimecodeAudioFile pFile)
+    {
+        SelectedFileId = pFile.Id;
+        SelectedFileIdChanged.InvokeAsync(pFile.Id);
+    }
+
+    private double CursorX => State.Duration > TimeSpan.Zero
+        ? Position.TotalSeconds / State.Duration.TotalSeconds * State.DisplayWidth
+        : 0;
+
+    private double SegmentX(TimecodeAudioFile pFile) => pFile.StartOffset.TotalSeconds * State.PixelsPerSecond;
+
+    private double SegmentWidth(TimecodeAudioFile pFile)
+    {
+        return Math.Max(0, FileDuration(pFile).TotalSeconds * State.PixelsPerSecond);
+    }
+
+    private TimeSpan FileDuration(TimecodeAudioFile pFile)
+    {
+        int index = Track.AudioFiles.IndexOf(pFile);
+
+        return index >= 0 && index < State.FileDurations.Count
+            ? State.FileDurations[index]
+            : TimeSpan.Zero;
+    }
+
+    /// <summary>
+    /// Returns the audio file whose segment contains the given x position, or null.
+    /// </summary>
+    private TimecodeAudioFile? HitTestFile(double pOffsetX)
+    {
+        for (int i = Track.AudioFiles.Count - 1; i >= 0; i--)
+        {
+            var file = Track.AudioFiles[i];
+            double x = SegmentX(file);
+            double width = SegmentWidth(file);
+
+            if (pOffsetX >= x && pOffsetX <= x + width)
+                return file;
+        }
+
+        return null;
+    }
+
+    private void OnWheel(WheelEventArgs pArgs)
+    {
+        if (State.BaseWidth <= 0)
+            return;
+
+        double factor = pArgs.DeltaY < 0 ? 1.2 : 1 / 1.2;
+
+        State.Zoom = Math.Clamp(State.Zoom * factor, 1, 50);
+
+        OnZoom.InvokeAsync(State.Zoom);
+    }
+
+    private void OnSettingChanged(ChangeEventArgs pArgs, Action<double> pApply)
+    {
+        if (double.TryParse(pArgs.Value?.ToString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double value))
+        {
+            pApply(value);
+            OnSettingsChanged.InvokeAsync();
+        }
+    }
+
+    private void OnCursorMouseDown(MouseEventArgs pArgs)
+    {
+        mMoved = false;
+
+        var hitFile = HitTestFile(pArgs.OffsetX);
+
+        if (hitFile != null)
+            SelectFile(hitFile);
+
+        if (pArgs.ShiftKey)
+        {
+            if (hitFile != null)
+            {
+                mDraggingFile = hitFile;
+                mDraggingFileGrabOffsetX = pArgs.OffsetX;
+            }
+
+            return;
+        }
+
+        _isDraggingCursor = true;
+        OnCursorDrag.InvokeAsync(new CursorDragArgs(pArgs.OffsetX, false));
+    }
+
+    private void OnCursorMouseMove(MouseEventArgs pArgs)
+    {
+        if (mDraggingFile != null)
+        {
+            mMoved = true;
+
+            double newSegmentLeft = SegmentX(mDraggingFile) + (pArgs.OffsetX - mDraggingFileGrabOffsetX);
+            mDraggingFileGrabOffsetX = pArgs.OffsetX;
+
+            OnFileDrag.InvokeAsync(new FileDragArgs(mDraggingFile.Id, PositionFromOffset(newSegmentLeft), false));
+            return;
+        }
+
+        if (!_isDraggingCursor)
+            return;
+
+        OnCursorDrag.InvokeAsync(new CursorDragArgs(pArgs.OffsetX, false));
+    }
+
+    private void OnCursorMouseUp(MouseEventArgs pArgs)
+    {
+        if (mDraggingFile != null)
+        {
+            var file = mDraggingFile;
+            mDraggingFile = null;
+
+            double newSegmentLeft = SegmentX(file) + (pArgs.OffsetX - mDraggingFileGrabOffsetX);
+            OnFileDrag.InvokeAsync(new FileDragArgs(file.Id, PositionFromOffset(newSegmentLeft), true));
+            return;
+        }
+
+        if (!_isDraggingCursor)
+            return;
+
+        _isDraggingCursor = false;
+        OnCursorDrag.InvokeAsync(new CursorDragArgs(pArgs.OffsetX, true));
+    }
+
+    private TimeSpan PositionFromOffset(double pOffsetX)
+    {
+        if (State.DisplayWidth <= 0 || State.Duration <= TimeSpan.Zero)
+            return TimeSpan.Zero;
+
+        double fraction = Math.Clamp(pOffsetX / State.DisplayWidth, 0, 1);
+        return TimeSpan.FromSeconds(fraction * State.Duration.TotalSeconds);
+    }
+
+    public record CursorDragArgs(double OffsetX, bool IsFinished);
+
+    public record FileDragArgs(Guid FileId, TimeSpan NewStartOffset, bool IsFinished);
+
+    public static string FormatTime(TimeSpan pTime)
+    {
+        return pTime.ToString(@"mm\:ss\.f");
+    }
+}

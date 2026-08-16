@@ -44,16 +44,30 @@ namespace DmxControlUtilities.Lib.Services
             {
                 lock (mLock)
                 {
-                    return mShow?.Events.OrderBy(e => e.Time).ToList() ?? new List<LightEvent>();
+                    return mShow?.AllEvents.OrderBy(e => e.Time).ToList() ?? new List<LightEvent>();
                 }
             }
         }
 
-        public void AddEvent(LightEvent pEvent)
+        /// <summary>
+        /// Adds an event to the given light event track. When no track is given, the first track is used or a new one is created.
+        /// </summary>
+        public void AddEvent(LightEvent pEvent, LightEventTrack? pTrack = null)
         {
             lock (mLock)
             {
-                mShow?.Events.Add(pEvent);
+                if (mShow == null)
+                    return;
+
+                var track = pTrack ?? mShow.LightEventTracks.FirstOrDefault();
+
+                if (track == null)
+                {
+                    track = new LightEventTrack();
+                    mShow.Tracks.Add(track);
+                }
+
+                track.Events.Add(pEvent);
             }
         }
 
@@ -61,7 +75,13 @@ namespace DmxControlUtilities.Lib.Services
         {
             lock (mLock)
             {
-                mShow?.Events.RemoveAll(e => e.Id == pEvent.Id);
+                if (mShow == null)
+                    return;
+
+                foreach (var track in mShow.LightEventTracks)
+                {
+                    track.Events.RemoveAll(e => e.Id == pEvent.Id);
+                }
             }
         }
 
@@ -69,7 +89,13 @@ namespace DmxControlUtilities.Lib.Services
         {
             lock (mLock)
             {
-                mShow?.Events.Clear();
+                if (mShow != null)
+                {
+                    foreach (var track in mShow.LightEventTracks)
+                    {
+                        track.Events.Clear();
+                    }
+                }
             }
 
             Reset();
@@ -108,14 +134,14 @@ namespace DmxControlUtilities.Lib.Services
 
                 if (isContinuous)
                 {
-                    toApply = mShow.Events
+                    toApply = mShow.AllEvents
                         .Where(e => e.Time > lastPosition && e.Time <= pPosition)
                         .OrderBy(e => e.Time)
                         .ToList();
                 }
                 else
                 {
-                    toApply = mShow.Events
+                    toApply = mShow.AllEvents
                         .Where(e => e.Time <= pPosition)
                         .GroupBy(e => e.DeviceId)
                         .Select(g => g.OrderBy(e => e.Time).Last())

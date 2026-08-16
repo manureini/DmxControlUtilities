@@ -1,0 +1,63 @@
+<div style="position: relative; width: @(Width.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture))px; height: @(Height)px; font-size: 0.7rem; color: #666; border-bottom: 1px solid #ccc; user-select: none;">
+    @foreach (var tick in GetTicks())
+    {
+        <div style="position: absolute; left: @(TickX(tick).ToString("0.##", System.Globalization.CultureInfo.InvariantCulture))px; height: 100%; border-left: 1px solid #ccc; padding-left: 2px; white-space: nowrap;">
+            @FormatTime(tick)
+        </div>
+    }
+</div>
+
+@code {
+
+    /// <summary>
+    /// Total duration shown on the time scale.
+    /// </summary>
+    [Parameter]
+    public TimeSpan Duration { get; set; }
+
+    /// <summary>
+    /// Width of the time scale in pixels.
+    /// </summary>
+    [Parameter]
+    public double Width { get; set; }
+
+    /// <summary>
+    /// Height of the time scale row in pixels.
+    /// </summary>
+    [Parameter]
+    public int Height { get; set; } = 18;
+
+    /// <summary>
+    /// Minimum space between two ticks in pixels. Smaller values allow finer granularity when zooming in.
+    /// </summary>
+    [Parameter]
+    public double MinTickSpacingPx { get; set; } = 60;
+
+    private double PixelsPerSecond => Duration > TimeSpan.Zero
+        ? Width / Duration.TotalSeconds
+        : 0;
+
+    private double TickX(TimeSpan pTick) => pTick.TotalSeconds * PixelsPerSecond;
+
+    private IEnumerable<TimeSpan> GetTicks()
+    {
+        if (PixelsPerSecond <= 0 || Duration <= TimeSpan.Zero || Width <= 0)
+            yield break;
+
+        double[] candidates = { 0.1, 0.25, 0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 1800, 3600 };
+        double step = candidates.FirstOrDefault(c => c * PixelsPerSecond >= MinTickSpacingPx);
+
+        if (step <= 0)
+            step = MinTickSpacingPx / PixelsPerSecond;
+
+        for (double seconds = 0; seconds <= Duration.TotalSeconds; seconds += step)
+        {
+            yield return TimeSpan.FromSeconds(seconds);
+        }
+    }
+
+    private static string FormatTime(TimeSpan pTime)
+    {
+        return pTime.ToString(@"mm\:ss\.f");
+    }
+}

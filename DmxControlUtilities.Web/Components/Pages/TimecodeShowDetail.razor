@@ -11,6 +11,7 @@
 @inject IJSRuntime JSRuntime
 
 @using DmxControlUtilities.Lib.Models
+@using DmxControlUtilities.Web.Components.Tracks
 @using ShowModel = DmxControlUtilities.Lib.Models.TimecodeShow
 
 <PageTitle>Timecode Show</PageTitle>
@@ -28,128 +29,62 @@ else
         <input class="form-control" style="width: auto;" @bind="_show.Name" />
     </div>
 
-    <InputFile OnChange="OnFileSelected" accept=".mp3,.wav,audio/*" />
+    <div class="mb-2" style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+        <InputFile OnChange="OnFileSelected" accept=".mp3,.wav,audio/*" />
+        <button class="btn btn-secondary btn-sm" @onclick="AddAudioTrack" title="Add sound track">+ Add sound track</button>
+        <button class="btn btn-secondary btn-sm" @onclick="AddLightTrack" title="Add light track">+ Add light track</button>
+    </div>
 
     @if (_errorMessage != null)
     {
         <p style="color: red;">@_errorMessage</p>
     }
 
-    @if (_imageDataUrl != null)
+    @foreach (var audioTrack in _show.AudioTracks)
     {
-        <div style="margin-top: 1rem;">
-            <p>@_fileName</p>
+        var track = audioTrack;
+        var state = GetState(track.Id);
 
-            <div style="margin-bottom: 0.5rem;">
-                <button class="btn btn-primary" @onclick="OnPlayPause" title="@(_isPlaying ? "Pause" : "Play")">
-                    @if (_isPlaying)
-                    {
-                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16" style="vertical-align: -0.125em;">
-                            <path d="M5.5 3.5A1.5 1.5 0 0 1 7 5v6a1.5 1.5 0 0 1-3 0V5a1.5 1.5 0 0 1 1.5-1.5zm5 0A1.5 1.5 0 0 1 12 5v6a1.5 1.5 0 0 1-3 0V5a1.5 1.5 0 0 1 1.5-1.5z" />
-                        </svg>
-                    }
-                    else
-                    {
-                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16" style="vertical-align: -0.125em;">
-                            <path d="m11.596 8.697-6.363 3.692c-.54.313-1.233-.066-1.233-.697V4.308c0-.63.692-1.01 1.233-.696l6.363 3.692a.802.802 0 0 1 0 1.393z" />
-                        </svg>
-                    }
-                </button>
-                <button class="btn btn-secondary" @onclick="OnStop" title="Stop">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16" style="vertical-align: -0.125em;">
-                        <path d="M5 3.5h6A1.5 1.5 0 0 1 12.5 5v6a1.5 1.5 0 0 1-1.5 1.5H5A1.5 1.5 0 0 1 3.5 11V5A1.5 1.5 0 0 1 5 3.5z" />
-                    </svg>
-                </button>
-                <span style="margin-left: 1rem;">@FormatTime(_position) / @FormatTime(_duration)</span>
+        @if (track.AudioFiles.Count > 0)
+        {
+            <AudioTrackComponent Track="track"
+                                 State="state"
+                                 Position="GetPosition(track.Id)"
+                                 IsPlaying="_isPlaying && _playbackTrackId == track.Id"
+                                 OnPlayPause="() => OnPlayPause(track)"
+                                 OnStop="() => OnStop(track)"
+                                 OnSettingsChanged="() => RegenerateImages(track)"
+                                 OnZoom="_ => RegenerateZoomImages(track)"
+                                 OnCursorDrag="args => OnCursorDrag(track, args)"
+                                 OnFileDrag="args => OnFileDrag(track, args)"
+                                 @bind-SelectedFileId="_selectedAudioFileId"
+                                 OnRemove="() => RemoveTrack(track)"
+                                 OnRemoveFile="fileId => RemoveAudioFile(track, fileId)"
+                                 OnMoveFile="args => MoveAudioFile(track, args.FileId, args.Direction)" />
+        }
+        else
+        {
+            <div style="margin-top: 1rem; display: flex; gap: 0.5rem; align-items: center;">
+                <strong>@(string.IsNullOrEmpty(track.Name) ? "Empty audio track" : track.Name)</strong>
+                <span style="color: #888; font-size: 0.9rem;">No audio files. Use the file picker above to add audio.</span>
+                <button class="btn btn-danger btn-sm" @onclick="() => RemoveTrack(track)" title="Remove audio track">x</button>
             </div>
+        }
+    }
 
-            <div style="width: 88vw; box-sizing: border-box; overflow: hidden; border: 1px solid #ccc; border-radius: 6px; padding: 1rem; background-color: #fff;">
-            <div style="display: flex; gap: 1rem; align-items: flex-start; width: 100%;">
-                <div style="flex: 0 0 220px; border: 1px solid #ccc; border-radius: 6px; padding: 1rem;">
-                    <h6>Image Settings</h6>
+    @foreach (var lightTrack in _show.LightEventTracks)
+    {
+        var track = lightTrack;
 
-                    <label for="threshold" style="display: block; margin-top: 0.5rem;">Threshold: @_threshold.ToString("0.00")</label>
-                    <input id="threshold" type="range" min="0" max="0.9" step="0.01" style="width: 100%;"
-                           @bind="_threshold" @bind:event="oninput" @bind:after="RegenerateImage" @bind:culture="System.Globalization.CultureInfo.InvariantCulture" />
-                    <div style="display: flex; justify-content: space-between; font-size: 0.75rem; color: #888;"><span>0</span><span>0.9</span></div>
-
-                    <label for="ratio" style="display: block; margin-top: 0.5rem;">Ratio: @_ratio.ToString("0.00")</label>
-                    <input id="ratio" type="range" min="0.25" max="4" step="0.05" style="width: 100%;"
-                           @bind="_ratio" @bind:event="oninput" @bind:after="RegenerateImage" @bind:culture="System.Globalization.CultureInfo.InvariantCulture" />
-                    <div style="display: flex; justify-content: space-between; font-size: 0.75rem; color: #888;"><span>0.25</span><span>4</span></div>
-
-                    <label for="bandwidth" style="display: block; margin-top: 0.5rem;">Bandwidth: @_bandwidth.ToString("0.00")</label>
-                    <input id="bandwidth" type="range" min="1" max="3" step="0.05" style="width: 100%;"
-                           @bind="_bandwidth" @bind:event="oninput" @bind:after="RegenerateImage" @bind:culture="System.Globalization.CultureInfo.InvariantCulture" />
-                    <div style="display: flex; justify-content: space-between; font-size: 0.75rem; color: #888;"><span>1</span><span>3</span></div>
-                </div>
-
-                <div style="flex: 1 1 0; min-width: 0; max-width: 100%; overflow: hidden;">
-                    <div style="overflow-x: auto; overflow-y: hidden; border: 1px solid #ccc; border-radius: 6px; padding: 8px; background-color: #fff;">
-                    <div style="position: relative; width: @(DisplayWidth.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture))px; height: 512px; cursor: crosshair; user-select: none;"
-                         @onmousedown="OnCursorMouseDown"
-                         @onmousemove="OnCursorMouseMove"
-                         @onmouseup="OnCursorMouseUp"
-                         @onmouseleave="OnCursorMouseUp"
-                         @onwheel="OnWheel"
-                         @onwheel:preventDefault="true">
-                        <img src="@_imageDataUrl"
-                             style="width: @(DisplayWidth.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture))px; height: 512px; display: block; pointer-events: none;"
-                             draggable="false"
-                             alt="Spectrogram" />
-                        <div style="position: absolute; top: 0; bottom: 0; left: @(CursorX.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture))px; width: 2px; background-color: red; pointer-events: none;"></div>
-                    </div>
-
-                    <div style="position: relative; width: @(DisplayWidth.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture))px; height: 40px; margin-top: 4px; border: 1px solid #ccc; border-radius: 4px; background-color: #f5f5f5; user-select: none;"
-                         @onmousemove="OnEventMouseMove"
-                         @onmouseup="OnEventMouseUp"
-                         @onmouseleave="OnEventMouseUp">
-                        @foreach (var lightEvent in _events)
-                        {
-                            var evt = lightEvent;
-
-                            <div title="@GetDeviceName(evt.DeviceId) @FormatTime(evt.Time)"
-                                 style="position: absolute; top: 4px; bottom: 4px; width: 10px; margin-left: -5px; border: 1px solid @(_selectedEvent?.Id == evt.Id ? "#000" : "#333"); border-radius: 2px; cursor: ew-resize; left: @(EventX(evt).ToString("0.##", System.Globalization.CultureInfo.InvariantCulture))px; background-color: @evt.ColorHex; @(_draggingEvent != null ? "pointer-events: none;" : string.Empty)"
-                                 @onmousedown="e => OnEventMouseDown(evt, e)"
-                                 @onmousedown:preventDefault="true"></div>
-                        }
-
-                        <div style="position: absolute; top: 0; bottom: 0; left: @(CursorX.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture))px; width: 2px; background-color: red; pointer-events: none;"></div>
-                    </div>
-                    </div>
-
-                    <div style="margin-top: 0.5rem; display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
-                        <button class="btn btn-primary" @onclick="AddEvent" title="Add event at current position">+</button>
-
-                        <select class="form-select" style="width: auto;" @bind="_selectedDeviceId">
-                            @foreach (var device in _devices)
-                            {
-                                <option value="@device.Id">@device.Name (Ch @device.Channel)</option>
-                            }
-                        </select>
-
-                        <input type="color" class="form-control form-control-color" @bind="_selectedColor" />
-
-                        <span>at @FormatTime(_position)</span>
-                    </div>
-
-                    @if (_selectedEvent != null)
-                    {
-                        <div style="margin-top: 0.5rem; display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
-                            <span>Event @FormatTime(_selectedEvent.Time) - @GetDeviceName(_selectedEvent.DeviceId)</span>
-
-                            <input type="color" class="form-control form-control-color"
-                                   value="@_selectedEvent.ColorHex"
-                                   @onchange="OnSelectedEventColorChanged" />
-
-                            <button class="btn btn-danger btn-sm" @onclick="RemoveSelectedEvent">Delete</button>
-                            <button class="btn btn-secondary btn-sm" @onclick="() => _selectedEvent = null">Close</button>
-                        </div>
-                    }
-                </div>
-            </div>
-            </div>
-        </div>
+        <LightEventTrackComponent Track="track"
+                                  Duration="GetShowDuration()"
+                                  Position="_playbackPosition"
+                                  Devices="_devices"
+                                  @bind-SelectedDeviceId="_selectedDeviceId"
+                                  @bind-SelectedColor="_selectedColor"
+                                  @bind-SelectedEvent="_selectedEvent"
+                                  OnChanged="OnLightTrackChanged"
+                                  OnRemove="() => RemoveTrack(track)" />
     }
 
     @if (_isProcessing)
@@ -169,73 +104,82 @@ else
 
     private bool _isProcessing;
     private string? _errorMessage;
-    private string? _imageDataUrl;
-    private string? _fileName;
 
-    private double _threshold = 0;
-    private double _ratio = 1;
-    private double _bandwidth = 2;
+    private readonly Dictionary<Guid, AudioTrackState> _trackStates = new();
     private int _regenerateVersion;
-
-    private int _imageWidth;
-    private int _baseWidth;
-    private double _zoom = 1;
-    private double _renderZoom = 1;
     private long _zoomVersion;
-    private bool _isPlaying;
-    private bool _isDragging;
 
-    private TimeSpan _duration;
-    private TimeSpan _position;
+    private Guid? _playbackTrackId;
+    private TimeSpan _playbackPosition;
+    private bool _isPlaying;
 
     private System.Timers.Timer? _timer;
 
     private DotNetObjectReference<TimecodeShowDetail>? _dotNetRef;
 
     private List<Device> _devices = new();
-    private List<LightEvent> _events = new();
     private Guid _selectedDeviceId;
+    private Guid _selectedAudioFileId;
     private string _selectedColor = "#ffffff";
     private LightEvent? _selectedEvent;
-    private LightEvent? _draggingEvent;
-
-    private double CursorX => _duration > TimeSpan.Zero
-        ? _position.TotalSeconds / _duration.TotalSeconds * DisplayWidth
-        : 0;
-
-    private double EventX(LightEvent pEvent) => _duration > TimeSpan.Zero
-        ? pEvent.Time.TotalSeconds / _duration.TotalSeconds * DisplayWidth
-        : 0;
 
     private const int BaseMaxWidth = 2000;
 
-    private double DisplayWidth => _baseWidth * _zoom;
-
-    private void OnWheel(WheelEventArgs pArgs)
+    private AudioTrackState GetState(Guid pTrackId)
     {
-        if (_baseWidth <= 0)
-            return;
+        if (!_trackStates.TryGetValue(pTrackId, out var state))
+        {
+            state = new AudioTrackState();
+            state.DurationChanged += OnTrackDurationChanged;
+            _trackStates[pTrackId] = state;
+        }
 
-        double factor = pArgs.DeltaY < 0 ? 1.2 : 1 / 1.2;
+        return state;
+    }
 
-        _zoom = Math.Clamp(_zoom * factor, 1, 50);
+    private void OnTrackDurationChanged()
+    {
+        InvokeAsync(StateHasChanged);
+    }
 
-        RegenerateZoomImage();
+    private TimeSpan GetShowDuration()
+    {
+        if (_show == null)
+            return TimeSpan.Zero;
+
+        TimeSpan duration = TimeSpan.Zero;
+
+        foreach (var track in _show.AudioTracks)
+        {
+            var trackDuration = GetState(track.Id).Duration;
+
+            if (trackDuration > duration)
+                duration = trackDuration;
+        }
+
+        return duration;
+    }
+
+    private TimeSpan GetPosition(Guid pTrackId)
+    {
+        return pTrackId == _playbackTrackId ? _playbackPosition : GetState(pTrackId).Position;
+    }
+
+    private TimecodeAudioTrack? FindAudioTrack(Guid pTrackId)
+    {
+        return _show?.AudioTracks.FirstOrDefault(t => t.Id == pTrackId);
     }
 
     /// <summary>
-    /// Recalculates the spectrogram in the background with a time resolution matching the current zoom level.
+    /// Recalculates the spectrograms in the background with a time resolution matching the current zoom level.
     /// </summary>
-    private void RegenerateZoomImage()
+    private void RegenerateZoomImages(TimecodeAudioTrack pTrack)
     {
-        var audioStream = _show?.AudioFilePath;
+        var state = GetState(pTrack.Id);
 
-        if (audioStream == null)
-            return;
+        double targetZoom = Math.Clamp(Math.Pow(2, Math.Ceiling(Math.Log2(state.Zoom))), 1, 16);
 
-        double targetZoom = Math.Clamp(Math.Pow(2, Math.Ceiling(Math.Log2(_zoom))), 1, 16);
-
-        if (Math.Abs(targetZoom - _renderZoom) < 0.01)
+        if (Math.Abs(targetZoom - state.RenderZoom) < 0.01)
             return;
 
         long version = Interlocked.Increment(ref _zoomVersion);
@@ -247,25 +191,18 @@ else
             if (version != _zoomVersion)
                 return;
 
-            double threshold = _threshold;
-            double ratio = _ratio;
-            double bandwidth = _bandwidth;
-
             try
             {
-                var bmp = SpectrogramService.CreateSpectrogramBmp(audioStream,
-                    pMaxWidth: (int)(BaseMaxWidth * targetZoom),
-                    pThreshold: threshold, pRatio: ratio, pBandwidth: bandwidth);
+                var images = await Task.Run(() => CreateSpectrogramImages(pTrack, (int)(BaseMaxWidth * targetZoom)));
 
                 if (version != _zoomVersion)
                     return;
 
                 await InvokeAsync(() =>
                 {
-                    _imageWidth = BitConverter.ToInt32(bmp, 18);
-                    _renderZoom = targetZoom;
-                    _baseWidth = (int)(_imageWidth / targetZoom);
-                    _imageDataUrl = "data:image/bmp;base64," + Convert.ToBase64String(bmp);
+                    state.ImageDataUrls = images;
+                    state.RenderZoom = targetZoom;
+                    state.BaseWidth = (int)(BaseMaxWidth);
                     StateHasChanged();
                 });
             }
@@ -289,31 +226,26 @@ else
 
         LightTrackService.SetShow(_show);
 
-        _threshold = _show.Threshold;
-        _ratio = _show.Ratio;
-        _bandwidth = _show.Bandwidth;
-        _fileName = _show.AudioFileName;
-
         RefreshDevices();
-        _events = LightTrackService.Events.ToList();
 
-        if (_show.AudioFilePath != null && _imageDataUrl == null)
+        foreach (var track in _show.AudioTracks)
         {
-            try
+            if (track.AudioFiles.Any(f => f.File != null) && GetState(track.Id).ImageDataUrls.Count == 0)
             {
-                await GenerateImage();
-
-                if (_show.AudioFilePath != null)
+                try
                 {
-                    PlaybackService.Load(_show.AudioFilePath);
-                }
+                    await GenerateImages(track);
 
-                _duration = PlaybackService.Duration;
-                _position = TimeSpan.Zero;
-            }
-            catch (Exception ex)
-            {
-                _errorMessage = "Error processing file: " + ex.Message;
+                    PlaybackService.Load(track);
+                    _playbackTrackId = track.Id;
+                    GetState(track.Id).Duration = PlaybackService.Duration;
+                    GetState(track.Id).ResetScale();
+                    GetState(track.Id).Position = TimeSpan.Zero;
+                }
+                catch (Exception ex)
+                {
+                    _errorMessage = "Error processing file: " + ex.Message;
+                }
             }
         }
 
@@ -337,20 +269,38 @@ else
     [JSInvokable]
     public void OnKeyPressed(string pKey, bool pCtrlKey, bool pShiftKey, bool pAltKey)
     {
-        if (_imageDataUrl == null)
+        var track = GetPlaybackTrack();
+
+        if (track == null || track.AudioFiles.Count == 0)
             return;
 
         switch (pKey)
         {
             case "Space" when pCtrlKey:
-                AddEvent();
+                AddEventAtPlaybackPosition();
                 break;
             case "Space":
-                OnPlayPause();
+                OnPlayPause(track);
                 break;
         }
 
         StateHasChanged();
+    }
+
+    private TimecodeAudioTrack? GetPlaybackTrack()
+    {
+        if (_show == null)
+            return null;
+
+        if (_playbackTrackId != null)
+        {
+            var track = FindAudioTrack(_playbackTrackId.Value);
+
+            if (track != null)
+                return track;
+        }
+
+        return _show.AudioTracks.FirstOrDefault(t => t.AudioFiles.Any(f => f.File != null));
     }
 
     private void RefreshDevices()
@@ -363,132 +313,162 @@ else
         }
     }
 
-    private string GetDeviceName(Guid pDeviceId)
+    private void AddAudioTrack()
     {
-        return _devices.FirstOrDefault(d => d.Id == pDeviceId)?.Name ?? "?";
+        if (_show == null)
+            return;
+
+        _show.Tracks.Add(new TimecodeAudioTrack
+        {
+            Name = "Audio " + (_show.AudioTracks.Count() + 1)
+        });
     }
 
-    private void AddEvent()
+    private void AddLightTrack()
     {
-        if (_selectedDeviceId == Guid.Empty)
+        if (_show == null)
             return;
+
+        _show.Tracks.Add(new LightEventTrack
+        {
+            Name = "Lights " + (_show.LightEventTracks.Count() + 1)
+        });
+
+        LightTrackService.Reset();
+    }
+
+    private void RemoveTrack(ITimecodeShowTrack pTrack)
+    {
+        if (_show == null)
+            return;
+
+        if (pTrack is TimecodeAudioTrack audioTrack)
+        {
+            if (_playbackTrackId == audioTrack.Id)
+            {
+                PlaybackService.Stop();
+                _playbackTrackId = null;
+                _isPlaying = false;
+            }
+
+            foreach (var file in audioTrack.AudioFiles)
+            {
+                file.File?.Dispose();
+            }
+
+            _trackStates.Remove(audioTrack.Id);
+        }
+        else if (pTrack is LightEventTrack lightTrack)
+        {
+            if (_selectedEvent != null && lightTrack.Events.Any(e => e.Id == _selectedEvent.Id))
+            {
+                _selectedEvent = null;
+            }
+        }
+
+        _show.Tracks.RemoveAll(t => t.Id == pTrack.Id);
+        LightTrackService.Reset();
+    }
+
+    /// <summary>
+    /// Adds an event at the current playback position to the first light track (keyboard shortcut).
+    /// </summary>
+    private void AddEventAtPlaybackPosition()
+    {
+        if (_show == null || _selectedDeviceId == Guid.Empty)
+            return;
+
+        var track = _show.LightEventTracks.FirstOrDefault();
+
+        if (track == null)
+        {
+            track = new LightEventTrack { Name = "Lights 1" };
+            _show.Tracks.Add(track);
+        }
 
         var lightEvent = new LightEvent
         {
             DeviceId = _selectedDeviceId,
-            Time = _position,
+            Time = _playbackPosition,
             ColorHex = _selectedColor
         };
 
-        LightTrackService.AddEvent(lightEvent);
-        _events = LightTrackService.Events.ToList();
+        track.Events.Add(lightEvent);
         _selectedEvent = lightEvent;
     }
 
-    private void SelectEvent(LightEvent pEvent)
+    private void OnLightTrackChanged()
     {
-        _selectedEvent = pEvent;
-    }
-
-    private void OnEventMouseDown(LightEvent pEvent, MouseEventArgs pArgs)
-    {
-        _selectedEvent = pEvent;
-        _draggingEvent = pEvent;
-    }
-
-    private void OnEventMouseMove(MouseEventArgs pArgs)
-    {
-        if (_draggingEvent == null)
-            return;
-
-        _draggingEvent.Time = PositionFromOffset(pArgs.OffsetX);
-        _events = LightTrackService.Events.ToList();
-    }
-
-    private void OnEventMouseUp(MouseEventArgs pArgs)
-    {
-        if (_draggingEvent == null)
-            return;
-
-        _draggingEvent.Time = PositionFromOffset(pArgs.OffsetX);
-        _draggingEvent = null;
-
-        _events = LightTrackService.Events.ToList();
         LightTrackService.Reset();
-    }
-
-    private void OnSelectedEventColorChanged(ChangeEventArgs pArgs)
-    {
-        if (_selectedEvent == null)
-            return;
-
-        _selectedEvent.ColorHex = pArgs.Value?.ToString() ?? _selectedEvent.ColorHex;
-        _events = LightTrackService.Events.ToList();
-    }
-
-    private void RemoveSelectedEvent()
-    {
-        if (_selectedEvent == null)
-            return;
-
-        LightTrackService.RemoveEvent(_selectedEvent);
-        _selectedEvent = null;
-        _events = LightTrackService.Events.ToList();
     }
 
     private void UpdatePlaybackState()
     {
-        if (_imageDataUrl == null)
+        if (_playbackTrackId == null)
             return;
 
         _isPlaying = PlaybackService.IsPlaying;
 
-        if (!_isDragging)
-        {
-            _position = PlaybackService.Position;
-        }
+        _playbackPosition = PlaybackService.Position;
 
         if (_isPlaying)
         {
-            LightTrackService.UpdatePosition(_position);
+            LightTrackService.UpdatePosition(_playbackPosition);
         }
 
         StateHasChanged();
     }
 
-    private async Task GenerateImage()
+    private async Task GenerateImages(TimecodeAudioTrack pTrack)
     {
-        var audioStream = _show?.AudioFilePath;
+        var state = GetState(pTrack.Id);
+        double renderZoom = state.RenderZoom;
 
-        if (audioStream == null)
-            return;
+        var images = await Task.Run(() => CreateSpectrogramImages(pTrack, (int)(BaseMaxWidth * renderZoom)));
 
-        double renderZoom = _renderZoom;
-
-        var bmp = await Task.Run(() => SpectrogramService.CreateSpectrogramBmp(audioStream,
-            pMaxWidth: (int)(BaseMaxWidth * renderZoom),
-            pThreshold: _threshold, pRatio: _ratio, pBandwidth: _bandwidth));
-
-        _imageWidth = BitConverter.ToInt32(bmp, 18);
-        _baseWidth = (int)(_imageWidth / renderZoom);
-        _imageDataUrl = "data:image/bmp;base64," + Convert.ToBase64String(bmp);
+        state.ImageDataUrls = images;
+        state.BaseWidth = (int)BaseMaxWidth;
     }
 
-    private void RegenerateImage()
+    /// <summary>
+    /// Creates one spectrogram image per audio file of the track. Files without a stream get a null entry.
+    /// </summary>
+    private List<string?> CreateSpectrogramImages(TimecodeAudioTrack pTrack, int pMaxWidth)
     {
-        var audioStream = _show?.AudioFilePath;
+        var images = new List<string?>();
+        var durations = new List<TimeSpan>();
 
-        if (audioStream == null)
-            return;
-
-        if (_show != null)
+        foreach (var file in pTrack.AudioFiles)
         {
-            _show.Threshold = _threshold;
-            _show.Ratio = _ratio;
-            _show.Bandwidth = _bandwidth;
+            if (file.File == null)
+            {
+                images.Add(null);
+                durations.Add(TimeSpan.Zero);
+                continue;
+            }
+
+            durations.Add(SpectrogramService.GetAudioDuration(file.File));
+
+            var bmp = SpectrogramService.CreateSpectrogramBmp(file.File,
+                pMaxWidth: pMaxWidth,
+                pThreshold: pTrack.Threshold, pRatio: pTrack.Ratio, pBandwidth: pTrack.Bandwidth);
+
+            images.Add("data:image/bmp;base64," + Convert.ToBase64String(bmp));
         }
 
+        GetState(pTrack.Id).FileDurations = durations;
+
+        return images;
+    }
+
+    private void RegenerateImages(TimecodeAudioTrack pTrack)
+    {
+        if (pTrack.AudioFiles.All(f => f.File == null))
+            return;
+
         int version = Interlocked.Increment(ref _regenerateVersion);
+
+        var state = GetState(pTrack.Id);
 
         _ = Task.Run(async () =>
         {
@@ -497,25 +477,18 @@ else
             if (version != _regenerateVersion)
                 return;
 
-            double threshold = _threshold;
-            double ratio = _ratio;
-            double bandwidth = _bandwidth;
-            double renderZoom = _renderZoom;
+            double renderZoom = state.RenderZoom;
 
             try
             {
-                var bmp = SpectrogramService.CreateSpectrogramBmp(audioStream,
-                    pMaxWidth: (int)(BaseMaxWidth * renderZoom),
-                    pThreshold: threshold, pRatio: ratio, pBandwidth: bandwidth);
+                var images = await Task.Run(() => CreateSpectrogramImages(pTrack, (int)(BaseMaxWidth * renderZoom)));
 
                 if (version != _regenerateVersion)
                     return;
 
                 await InvokeAsync(() =>
                 {
-                    _imageWidth = BitConverter.ToInt32(bmp, 18);
-                    _baseWidth = (int)(_imageWidth / renderZoom);
-                    _imageDataUrl = "data:image/bmp;base64," + Convert.ToBase64String(bmp);
+                    state.ImageDataUrls = images;
                     StateHasChanged();
                 });
             }
@@ -533,9 +506,7 @@ else
     private async Task OnFileSelected(InputFileChangeEventArgs pArgs)
     {
         _errorMessage = null;
-        _imageDataUrl = null;
         _isProcessing = true;
-        _fileName = pArgs.File.Name;
 
         PlaybackService.Stop();
 
@@ -549,16 +520,34 @@ else
 
             if (_show != null)
             {
-                _show.AudioFileName = _fileName ?? string.Empty;
-                _show.AudioFilePath?.Dispose();
-                _show.AudioFilePath = audioStream;
+                var track = _show.AudioTracks.FirstOrDefault();
+
+                if (track == null)
+                {
+                    track = new TimecodeAudioTrack { Name = "Audio 1" };
+                    _show.Tracks.Add(track);
+                }
+
+                track.AudioFiles.Add(new TimecodeAudioFile
+                {
+                    FileName = pArgs.File.Name,
+                    File = audioStream,
+                    StartOffset = GetState(track.Id).Duration
+                });
+
+                if (string.IsNullOrEmpty(track.Name))
+                    track.Name = pArgs.File.Name;
+
+                var state = GetState(track.Id);
+                state.Position = TimeSpan.Zero;
+
+                await GenerateImages(track);
+
+                PlaybackService.Load(track);
+                _playbackTrackId = track.Id;
+                state.Duration = PlaybackService.Duration;
+                _playbackPosition = TimeSpan.Zero;
             }
-
-            await GenerateImage();
-
-            PlaybackService.Load(audioStream);
-            _duration = PlaybackService.Duration;
-            _position = TimeSpan.Zero;
         }
         catch (Exception ex)
         {
@@ -570,14 +559,23 @@ else
         }
     }
 
-    private void OnPlayPause()
+    private void OnPlayPause(TimecodeAudioTrack pTrack)
     {
-        if (PlaybackService.IsPlaying)
+        if (PlaybackService.IsPlaying && _playbackTrackId == pTrack.Id)
         {
             PlaybackService.Pause();
         }
         else
         {
+            if (_playbackTrackId != pTrack.Id && pTrack.AudioFiles.Any(f => f.File != null))
+            {
+                PlaybackService.Load(pTrack);
+                _playbackTrackId = pTrack.Id;
+                GetState(pTrack.Id).Duration = PlaybackService.Duration;
+                _playbackPosition = GetState(pTrack.Id).Position;
+                PlaybackService.Seek(_playbackPosition);
+            }
+
             RefreshDevices();
             LightTrackService.Reset();
             PlaybackService.Play();
@@ -586,57 +584,183 @@ else
         _isPlaying = PlaybackService.IsPlaying;
     }
 
-    private void OnStop()
+    private void OnStop(TimecodeAudioTrack pTrack)
     {
-        PlaybackService.Stop();
+        if (_playbackTrackId == pTrack.Id)
+        {
+            PlaybackService.Stop();
+            _isPlaying = false;
+            _playbackPosition = TimeSpan.Zero;
+        }
+
+        GetState(pTrack.Id).Position = TimeSpan.Zero;
         LightTrackService.Reset();
-        _isPlaying = false;
-        _position = TimeSpan.Zero;
     }
 
-    private void OnCursorMouseDown(MouseEventArgs pArgs)
+    private void RemoveAudioFile(TimecodeAudioTrack pTrack, Guid pFileId)
     {
-        _isDragging = true;
-        _position = PositionFromOffset(pArgs.OffsetX);
-    }
+        var file = pTrack.AudioFiles.FirstOrDefault(f => f.Id == pFileId);
 
-    private void OnCursorMouseMove(MouseEventArgs pArgs)
-    {
-        if (!_isDragging)
+        if (file == null)
             return;
 
-        _position = PositionFromOffset(pArgs.OffsetX);
+        pTrack.AudioFiles.Remove(file);
+        file.File?.Dispose();
+
+        _ = RefreshAudioTrack(pTrack);
     }
 
-    private void OnCursorMouseUp(MouseEventArgs pArgs)
+    private void MoveAudioFile(TimecodeAudioTrack pTrack, Guid pFileId, int pDirection)
     {
-        if (!_isDragging)
+        int index = pTrack.AudioFiles.FindIndex(f => f.Id == pFileId);
+        int newIndex = index + pDirection;
+
+        if (index < 0 || newIndex < 0 || newIndex >= pTrack.AudioFiles.Count)
             return;
 
-        _isDragging = false;
-        _position = PositionFromOffset(pArgs.OffsetX);
-        PlaybackService.Seek(_position);
-        LightTrackService.Reset();
+        (pTrack.AudioFiles[index], pTrack.AudioFiles[newIndex]) = (pTrack.AudioFiles[newIndex], pTrack.AudioFiles[index]);
 
-        LightTrackService.UpdatePosition(_position);
+        _ = RefreshAudioTrack(pTrack);
     }
 
-    private TimeSpan PositionFromOffset(double pOffsetX)
+    /// <summary>
+    /// Recalculates file offsets and spectrograms and reloads playback after the files of a track changed.
+    /// </summary>
+    private async Task RefreshAudioTrack(TimecodeAudioTrack pTrack)
     {
-        if (DisplayWidth <= 0)
+        _errorMessage = null;
+
+        try
+        {
+            var state = GetState(pTrack.Id);
+
+            await GenerateImages(pTrack);
+
+            if (_playbackTrackId == pTrack.Id)
+            {
+                var position = _playbackPosition;
+                bool wasPlaying = PlaybackService.IsPlaying;
+
+                PlaybackService.Load(pTrack);
+                state.Duration = PlaybackService.Duration;
+                state.ResetScale();
+
+                PlaybackService.Seek(position);
+
+                if (wasPlaying)
+                    PlaybackService.Play();
+            }
+            else
+            {
+                var playlist = PlaylistWaveStream.Create(pTrack.AudioFiles.Where(f => f.File != null).Select(f => f.File!));
+
+                if (playlist != null)
+                {
+                    state.Duration = playlist.TotalTime;
+                    playlist.Dispose();
+                }
+                else
+                {
+                    state.Duration = TimeSpan.Zero;
+                }
+
+                state.ResetScale();
+            }
+
+            LightTrackService.Reset();
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = "Error processing file: " + ex.Message;
+        }
+
+        StateHasChanged();
+    }
+
+    private void OnCursorDrag(TimecodeAudioTrack pTrack, AudioTrackComponent.CursorDragArgs pArgs)
+    {
+        var position = PositionFromOffset(pTrack.Id, pArgs.OffsetX);
+        GetState(pTrack.Id).Position = position;
+
+        if (pArgs.IsFinished && _playbackTrackId == pTrack.Id)
+        {
+            _playbackPosition = position;
+            PlaybackService.Seek(position);
+            LightTrackService.Reset();
+
+            LightTrackService.UpdatePosition(position);
+        }
+    }
+
+    /// <summary>
+    /// Moves a single audio file on the time axis. Only the dragged file changes its offset,
+    /// so breaks between the files can be created.
+    /// </summary>
+    private void OnFileDrag(TimecodeAudioTrack pTrack, AudioTrackComponent.FileDragArgs pArgs)
+    {
+        var file = pTrack.AudioFiles.FirstOrDefault(f => f.Id == pArgs.FileId);
+
+        if (file == null)
+            return;
+
+        file.StartOffset = pArgs.NewStartOffset;
+
+        // extend the track duration when the file is moved past the end
+        var state = GetState(pTrack.Id);
+        int fileIndex = pTrack.AudioFiles.IndexOf(file);
+        var fileDuration = fileIndex >= 0 && fileIndex < state.FileDurations.Count
+            ? state.FileDurations[fileIndex]
+            : TimeSpan.Zero;
+        var end = file.StartOffset + fileDuration;
+
+        if (end > state.Duration)
+            state.Duration = end;
+
+        if (pArgs.IsFinished)
+        {
+            RefreshAudioTrackPlayback(pTrack);
+        }
+    }
+
+    /// <summary>
+    /// Reloads playback after the file offsets of a track changed (without regenerating spectrograms).
+    /// </summary>
+    private void RefreshAudioTrackPlayback(TimecodeAudioTrack pTrack)
+    {
+        if (_playbackTrackId != pTrack.Id)
+            return;
+
+        var position = _playbackPosition;
+        bool wasPlaying = PlaybackService.IsPlaying;
+
+        PlaybackService.Load(pTrack);
+
+        PlaybackService.Seek(position);
+
+        if (wasPlaying)
+            PlaybackService.Play();
+
+        LightTrackService.Reset();
+    }
+
+    private TimeSpan PositionFromOffset(Guid pTrackId, double pOffsetX)
+    {
+        var state = GetState(pTrackId);
+
+        if (state.DisplayWidth <= 0)
             return TimeSpan.Zero;
 
-        double fraction = Math.Clamp(pOffsetX / DisplayWidth, 0, 1);
-        return TimeSpan.FromSeconds(fraction * _duration.TotalSeconds);
-    }
-
-    private static string FormatTime(TimeSpan pTime)
-    {
-        return pTime.ToString(@"mm\:ss\.f");
+        double fraction = Math.Clamp(pOffsetX / state.DisplayWidth, 0, 1);
+        return TimeSpan.FromSeconds(fraction * state.Duration.TotalSeconds);
     }
 
     public void Dispose()
     {
+        foreach (var state in _trackStates.Values)
+        {
+            state.DurationChanged -= OnTrackDurationChanged;
+        }
+
         _timer?.Stop();
         _timer?.Dispose();
 
