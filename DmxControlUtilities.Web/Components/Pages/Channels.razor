@@ -3,6 +3,7 @@
 @using DmxControlUtilities.Lib.Services
 
 @inject DmxFtdiService DmxService
+@implements IDisposable
 
 <PageTitle>Channels</PageTitle>
 
@@ -62,7 +63,23 @@
 
     protected byte[] mValues = new byte[513];
 
+    private System.Timers.Timer? _timer;
+
     protected override void OnInitialized()
+    {
+        RefreshValues();
+
+        _timer = new System.Timers.Timer(500);
+        _timer.Elapsed += (_, _) => _ = InvokeAsync(() =>
+        {
+            RefreshValues();
+            StateHasChanged();
+        });
+        _timer.AutoReset = true;
+        _timer.Start();
+    }
+
+    private void RefreshValues()
     {
         for (int i = 1; i <= 512; i++)
         {
@@ -77,5 +94,11 @@
 
         mValues[pChannel] = value;
         DmxService.SetChannel(pChannel, value);
+    }
+
+    public void Dispose()
+    {
+        _timer?.Stop();
+        _timer?.Dispose();
     }
 }

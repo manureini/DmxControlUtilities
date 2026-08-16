@@ -3,27 +3,25 @@
 @implements IDisposable
 
 <div style="margin-top: 1rem;">
-    <div style="margin: 0.25rem 0; display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
-        @for (int i = 0; i < Track.AudioFiles.Count; i++)
-        {
-            var index = i;
-            var file = Track.AudioFiles[index];
-
-            <span style="display: inline-flex; gap: 0.25rem; align-items: center; border: 1px solid @(SelectedFileId == file.Id ? "#0d6efd" : "#ccc"); border-radius: 4px; padding: 0.1rem 0.4rem; cursor: pointer; background-color: @(SelectedFileId == file.Id ? "#cfe2ff" : "#f8f8f8");"
-                  @onclick="() => SelectFile(file)">
-                <span>@file.FileName (@FormatTime(file.StartOffset))</span>
-                <button class="btn btn-secondary btn-sm" style="padding: 0 0.3rem;" disabled="@(index == 0)" @onclick="() => OnMoveFile.InvokeAsync((file.Id, -1))" @onclick:stopPropagation="true" title="Move up">&uarr;</button>
-                <button class="btn btn-secondary btn-sm" style="padding: 0 0.3rem;" disabled="@(index == Track.AudioFiles.Count - 1)" @onclick="() => OnMoveFile.InvokeAsync((file.Id, 1))" @onclick:stopPropagation="true" title="Move down">&darr;</button>
-                <button class="btn btn-danger btn-sm" style="padding: 0 0.3rem;" @onclick="() => OnRemoveFile.InvokeAsync(file.Id)" @onclick:stopPropagation="true" title="Remove file">x</button>
-            </span>
-        }
-    </div>
-
-    <div style="margin-bottom: 0.5rem;">
-        <span>@FormatTime(Position) / @FormatTime(State.Duration)</span>
-    </div>
 
     <div style="width: 88vw; box-sizing: border-box; overflow: hidden; border: 1px solid #ccc; border-radius: 6px; padding: 1rem; background-color: #fff;">
+         
+        <div style="margin: 0.25rem 0; display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+            @for (int i = 0; i < Track.AudioFiles.Count; i++)
+            {
+                var index = i;
+                var file = Track.AudioFiles[index];
+
+                <span style="display: inline-flex; gap: 0.25rem; align-items: center; border: 1px solid @(SelectedFileId == file.Id ? "#0d6efd" : "#ccc"); border-radius: 4px; padding: 0.1rem 0.4rem; cursor: pointer; background-color: @(SelectedFileId == file.Id ? "#cfe2ff" : "#f8f8f8");"
+                      @onclick="() => SelectFile(file)">
+                    <span>@file.FileName (@FormatTime(file.StartOffset))</span>
+                    <button class="btn btn-secondary btn-sm" style="padding: 0 0.3rem;" disabled="@(index == 0)" @onclick="() => OnMoveFile.InvokeAsync((file.Id, -1))" @onclick:stopPropagation="true" title="Move up">&uarr;</button>
+                    <button class="btn btn-secondary btn-sm" style="padding: 0 0.3rem;" disabled="@(index == Track.AudioFiles.Count - 1)" @onclick="() => OnMoveFile.InvokeAsync((file.Id, 1))" @onclick:stopPropagation="true" title="Move down">&darr;</button>
+                    <button class="btn btn-danger btn-sm" style="padding: 0 0.3rem;" @onclick="() => OnRemoveFile.InvokeAsync(file.Id)" @onclick:stopPropagation="true" title="Remove file">x</button>
+                </span>
+            }
+        </div>
+
         <div style="display: flex; gap: 1rem; align-items: flex-start; width: 100%;">
             <div style="flex: 0 0 220px; border: 1px solid #ccc; border-radius: 6px; padding: 1rem;">
                 <div style="display: flex; align-items: center; justify-content: space-between; gap: 0.25rem;">
@@ -34,15 +32,15 @@
                             @if (Track.Muted)
                             {
                                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16" style="vertical-align: -0.1em;">
-                                    <path d="M6.717 3.55A.5.5 0 0 1 7 3.55v8.9a.5.5 0 0 1-.812.39L3.825 10.5H1.5A.5.5 0 0 1 1 10V6a.5.5 0 0 1 .5-.5h2.325l2.363-1.89a.5.5 0 0 1 .529-.06zM8 5.04 6.056 3.59 7.5 2.146 9.444 3.59l1.944-1.444 1.444 1.444-1.944 1.444 1.944 1.444-1.444 1.444-1.944-1.444L7.5 8.922 6.056 7.478 8 6.034z" transform="translate(0 1) scale(0.9)"/>
+                                    <path d="M6.717 3.55A.5.5 0 0 1 7 3.55v8.9a.5.5 0 0 1-.812.39L3.825 10.5H1.5A.5.5 0 0 1 1 10V6a.5.5 0 0 1 .5-.5h2.325l2.363-1.89a.5.5 0 0 1 .529-.06zM8 5.04 6.056 3.59 7.5 2.146 9.444 3.59l1.944-1.444 1.444 1.444-1.944 1.444 1.944 1.444-1.444 1.444-1.944-1.444L7.5 8.922 6.056 7.478 8 6.034z" transform="translate(0 1) scale(0.9)" />
                                 </svg>
                             }
                             else
                             {
                                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16" style="vertical-align: -0.1em;">
-                                    <path d="M11.536 14.01A8.473 8.473 0 0 0 14.026 8a8.473 8.473 0 0 0-2.49-6.01l-.708.707A7.476 7.476 0 0 1 13.025 8c0 2.071-.84 3.946-2.197 5.303l.708.707z"/>
-                                    <path d="M10.121 12.596A6.48 6.48 0 0 0 12.025 8a6.48 6.48 0 0 0-1.904-4.596l-.707.707A5.483 5.483 0 0 1 11.025 8a5.483 5.483 0 0 1-1.61 3.89l.706.706z"/>
-                                    <path d="M10.025 8a4.486 4.486 0 0 1-1.318 3.182L8 10.475A3.489 3.489 0 0 0 9.025 8c0-.966-.392-1.841-1.025-2.475l.707-.707A4.486 4.486 0 0 1 10.025 8zM7 4.25v7.5L3.5 10.5H1.5a.5.5 0 0 1-.5-.5V6a.5.5 0 0 1 .5-.5h2.325L7 4.25z"/>
+                                    <path d="M11.536 14.01A8.473 8.473 0 0 0 14.026 8a8.473 8.473 0 0 0-2.49-6.01l-.708.707A7.476 7.476 0 0 1 13.025 8c0 2.071-.84 3.946-2.197 5.303l.708.707z" />
+                                    <path d="M10.121 12.596A6.48 6.48 0 0 0 12.025 8a6.48 6.48 0 0 0-1.904-4.596l-.707.707A5.483 5.483 0 0 1 11.025 8a5.483 5.483 0 0 1-1.61 3.89l.706.706z" />
+                                    <path d="M10.025 8a4.486 4.486 0 0 1-1.318 3.182L8 10.475A3.489 3.489 0 0 0 9.025 8c0-.966-.392-1.841-1.025-2.475l.707-.707A4.486 4.486 0 0 1 10.025 8zM7 4.25v7.5L3.5 10.5H1.5a.5.5 0 0 1-.5-.5V6a.5.5 0 0 1 .5-.5h2.325L7 4.25z" />
                                 </svg>
                             }
                         </button>

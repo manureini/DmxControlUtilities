@@ -1,10 +1,16 @@
 @using DmxControlUtilities.Lib.Models
 @using DmxControlUtilities.Web.Components.Tracks
+@inject IJSRuntime JSRuntime
+@implements IDisposable
 
 <div style="margin-bottom: 1rem; user-select: none;">
     <TimeScale Duration="Duration" Width="StripWidth" Height="16" MinTickSpacingPx="100" />
 
-    <div style="position: relative; width: 100%; height: 2rem; border: 1px solid #ccc; border-top: none; border-radius: 0 0 4px 4px; background-color: #f5f5f5; overflow: hidden;">
+    <div @ref="_strip" style="position: relative; width: 100%; height: 2rem; border: 1px solid #ccc; border-top: none; border-radius: 0 0 4px 4px; background-color: #f5f5f5; overflow: hidden; cursor: pointer;"
+         @onmousedown="OnStripMouseDown"
+         @onmousemove="OnStripMouseMove"
+         @onmouseup="OnStripMouseUp"
+         @onmouseleave="OnStripMouseUp">
         @* audio file blocks *@
         @if (Show != null)
         {
@@ -21,7 +27,7 @@
                         continue;
 
                     <div title="@file.FileName (@FormatTime(file.StartOffset)) - @track.Name"
-                         style="position: absolute; top: 2px; bottom: 2px; left: @(LeftPct(file.StartOffset)); width: @(WidthPct(duration)); background-color: @(track.Muted ? "#b6c2d6" : "#4a7ad1"); border: 1px solid #33549c; border-radius: 2px; overflow: hidden; white-space: nowrap; font-size: 0.6rem; color: #fff; padding-left: 2px; display: flex; align-items: center;">
+                         style="position: absolute; top: 2px; bottom: 2px; left: @(LeftPct(file.StartOffset)); width: @(WidthPct(duration)); background-color: @(track.Muted ? "#b6c2d6" : "#4a7ad1"); border: 1px solid #33549c; border-radius: 2px; overflow: hidden; white-space: nowrap; font-size: 0.6rem; color: #fff; padding-left: 2px; display: flex; align-items: center; pointer-events: none;">
                         @track.Name
                     </div>
                 }
@@ -31,13 +37,21 @@
             @foreach (var lightEvent in Show.AllEvents)
             {
                 <div title="@FormatTime(lightEvent.Time)"
-                     style="position: absolute; top: 0; bottom: 0; width: 4px; margin-left: -2px; left: @(LeftPct(lightEvent.Time)); background-color: @lightEvent.ColorHex; border-left: 1px solid #333;">
+                     style="position: absolute; top: 0; bottom: 0; width: 4px; margin-left: -2px; left: @(LeftPct(lightEvent.Time)); background-color: @lightEvent.ColorHex; border-left: 1px solid #333; pointer-events: none;">
                 </div>
             }
         }
 
         @* cursor *@
-        <div style="position: absolute; top: 0; bottom: 0; left: @(CursorXPct); width: 2px; background-color: red;"></div>
+        <div style="position: absolute; top: 0; bottom: 0; left: @(CursorXPct); width: 2px; background-color: red; pointer-events: none;"></div>
+
+        @* visible scroll window (minimap viewport) *@
+        @if (ViewportWidthPct < 100)
+        {
+            <div title="Visible area - drag to scroll"
+                 style="position: absolute; top: 0; bottom: 0; left: @(ViewportLeftPct); width: @(ViewportWidthPct.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture))%; background-color: rgba(13,110,253,0.12); border: 1px solid rgba(13,110,253,0.8); border-radius: 2px; box-sizing: border-box; cursor: grab; pointer-events: none;">
+            </div>
+        }
     </div>
 </div>
 
@@ -67,9 +81,125 @@
     [Parameter]
     public Func<Guid, AudioTrackState> GetState { get; set; } = null!;
 
+    /// <summary>
+    /// Identifies the scroll-sync group this overview mirrors. Matches the track components.
+    /// </summary>
+    [Parameter]
+    public string ScrollGroup { get; set; } = "show";
+
     private const double StripWidth = 2000;
 
     private string CursorXPct => Pct(Position);
+
+    private double _viewportLeft; // 0..1 fraction of the whole timeline where the visible window starts
+    private double _viewportWidth = 1; // 0..1 fraction of the whole timeline that is visible
+
+    private string ViewportLeftPct => (_viewportLeft * 100).ToString("0.###", System.Globalization.CultureInfo.InvariantCulture) + "%";
+    private double ViewportWidthPct => _viewportWidth * 100;
+
+    private ElementReference _strip;
+    private DotNetObjectReference<ShowOverviewComponent>? _dotNetRef;
+    private bool _viewportRegistered;
+    private bool _isDraggingViewport;
+    private double _dragGrabOffset; // fraction of the strip where the indicator was grabbed
+
+    [JSInvokable]
+    public void OnViewportChangedJs(double leftFraction, double widthFraction)
+    {
+        // leftFraction is the fraction of the scrollable range; convert to a fraction of the whole timeline.
+        _viewportWidth = widthFraction;
+        _viewportLeft = leftFraction * Math.Max(0, 1 - widthFraction);
+        StateHasChanged();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            _dotNetRef = DotNetObjectReference.Create(this);
+        }
+
+        // The scroll group only exists once a track is rendered, so retry until it succeeds.
+        if (!_viewportRegistered && _dotNetRef != null)
+        {
+            _viewportRegistered = await JSRuntime.InvokeAsync<bool>("registerViewportNotify", ScrollGroup, _dotNetRef);
+        }
+    }
+
+    private async Task<double> GetStripFraction(MouseEventArgs pArgs)
+    {
+        var rect = await JSRuntime.InvokeAsync<ElementRect?>("getElementRect", _strip);
+
+        if (rect == null || rect.Width <= 0)
+            return 0;
+
+        return Math.Clamp((pArgs.ClientX - rect.Left) / rect.Width, 0, 1);
+    }
+
+    private async Task OnStripMouseDown(MouseEventArgs pArgs)
+    {
+        if (Duration <= TimeSpan.Zero)
+            return;
+
+        double fraction = await GetStripFraction(pArgs);
+
+        double viewStart = _viewportLeft;
+        double viewEnd = _viewportLeft + _viewportWidth;
+
+        if (fraction >= viewStart && fraction <= viewEnd)
+        {
+            // grabbed inside the indicator: drag it
+            _isDraggingViewport = true;
+            _dragGrabOffset = fraction - _viewportLeft;
+        }
+        else
+        {
+            // clicked outside: center the viewport there and start dragging
+            _isDraggingViewport = true;
+            _dragGrabOffset = _viewportWidth / 2;
+            ScrollToWindowStart(fraction - _dragGrabOffset);
+        }
+    }
+
+    private async Task OnStripMouseMove(MouseEventArgs pArgs)
+    {
+        if (!_isDraggingViewport)
+            return;
+
+        double fraction = await GetStripFraction(pArgs);
+        ScrollToWindowStart(fraction - _dragGrabOffset);
+    }
+
+    private void OnStripMouseUp(MouseEventArgs pArgs)
+    {
+        _isDraggingViewport = false;
+    }
+
+    /// <summary>
+    /// Scrolls the tracks so the visible window starts at the given fraction of the whole timeline.
+    /// </summary>
+    private void ScrollToWindowStart(double windowStartFraction)
+    {
+        double maxStart = Math.Max(0, 1 - _viewportWidth);
+        double clamped = Math.Clamp(windowStartFraction, 0, maxStart);
+
+        // convert window-start fraction back to a scroll-range fraction
+        double scrollFraction = maxStart > 0 ? clamped / maxStart : 0;
+
+        _ = JSRuntime.InvokeVoidAsync("setTrackScrollFraction", ScrollGroup, scrollFraction);
+    }
+
+    public void Dispose()
+    {
+        _ = JSRuntime.InvokeVoidAsync("unregisterViewportNotify");
+        _dotNetRef?.Dispose();
+    }
+
+    private sealed class ElementRect
+    {
+        public double Left { get; set; }
+        public double Width { get; set; }
+    }
 
     private string Pct(TimeSpan pTime)
     {

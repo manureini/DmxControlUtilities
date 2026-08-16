@@ -25,8 +25,6 @@
 
                 <label style="display: block; margin-top: 0.5rem;">Color</label>
                 <input type="color" class="form-control form-control-color w-100" @bind="SelectedColor" />
-
-                <div style="margin-top: 0.5rem; font-size: 0.75rem; color: #888;">at @FormatTime(Position)</div>
             </div>
 
             <div style="flex: 1 1 0; min-width: 0; max-width: 100%; overflow: hidden; display: flex; flex-direction: column;">
@@ -43,8 +41,8 @@
                         {
                             var evt = lightEvent;
 
-                            <div title="@GetDeviceName(evt.DeviceId) @FormatTime(evt.Time)"
-                                 style="position: absolute; top: 4px; bottom: 4px; width: 10px; margin-left: -5px; border: 1px solid @(SelectedEvent?.Id == evt.Id ? "#000" : "#333"); border-radius: 2px; cursor: ew-resize; left: @(EventX(evt).ToString("0.##", System.Globalization.CultureInfo.InvariantCulture))px; background-color: @evt.ColorHex; @(_draggingEvent != null ? "pointer-events: none;" : string.Empty)"
+                            <div title="@GetDeviceName(evt.DeviceId) @FormatTime(evt.Time) - hold Shift and drag to move"
+                                 style="position: absolute; top: 4px; bottom: 4px; width: 10px; margin-left: -5px; border: 1px solid @(SelectedEvent?.Id == evt.Id ? "#000" : "#333"); border-radius: 2px; cursor: pointer; left: @(EventX(evt).ToString("0.##", System.Globalization.CultureInfo.InvariantCulture))px; background-color: @evt.ColorHex; @(_draggingEvent != null ? "pointer-events: none;" : string.Empty)"
                                  @onmousedown="e => OnEventMouseDown(evt, e)"
                                  @onmousedown:preventDefault="true"></div>
                         }
@@ -191,8 +189,11 @@
     private void OnEventMouseDown(LightEvent pEvent, MouseEventArgs pArgs)
     {
         SelectedEvent = pEvent;
-        _draggingEvent = pEvent;
         SelectedEventChanged.InvokeAsync(SelectedEvent);
+
+        // Only start moving the event when Shift is held (same as audio files).
+        if (pArgs.ShiftKey)
+            _draggingEvent = pEvent;
     }
 
     private void OnStripMouseDown(MouseEventArgs pArgs)

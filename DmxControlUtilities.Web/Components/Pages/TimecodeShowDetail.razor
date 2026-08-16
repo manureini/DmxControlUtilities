@@ -63,6 +63,7 @@ else
     <ShowOverviewComponent Show="_show"
                            Duration="GetShowDuration()"
                            Position="ClockService.Position"
+                           ScrollGroup="@ScrollGroupId"
                            GetState="GetState" />
 
     @foreach (var audioTrack in _show.AudioTracks)
