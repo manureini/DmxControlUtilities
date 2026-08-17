@@ -47,7 +47,7 @@
                     }
                 </TrackScrollContainer>
 
-                @if (SelectedEvent != null)
+                @if (SelectedEvent != null && Track.Events.Any(e => e.Id == SelectedEvent.Id))
                 {
                     <div style="margin-top: 0.5rem; display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
                         <span>Event @FormatTime(SelectedEvent.Time) - @GetDeviceName(SelectedEvent.DeviceId)</span>
