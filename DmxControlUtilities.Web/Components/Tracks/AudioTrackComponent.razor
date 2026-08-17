@@ -173,6 +173,7 @@
     }
 
     private bool _isDraggingCursor;
+    private bool _cursorMoved;
     private TimecodeAudioFile? mDraggingFile;
     private double mDraggingFileGrabOffsetX;
     private bool mMoved;
@@ -292,8 +293,12 @@
             return;
         }
 
+        // Only the left mouse button seeks the cursor (ignore wheel/middle clicks).
+        if (pArgs.Button != 0)
+            return;
+
         _isDraggingCursor = true;
-        OnCursorDrag.InvokeAsync(new CursorDragArgs(pArgs.OffsetX, false));
+        _cursorMoved = false;
     }
 
     private void OnCursorMouseMove(MouseEventArgs pArgs)
@@ -312,6 +317,7 @@
         if (!_isDraggingCursor)
             return;
 
+        _cursorMoved = true;
         OnCursorDrag.InvokeAsync(new CursorDragArgs(pArgs.OffsetX, false));
     }
 
@@ -331,7 +337,11 @@
             return;
 
         _isDraggingCursor = false;
-        OnCursorDrag.InvokeAsync(new CursorDragArgs(pArgs.OffsetX, true));
+
+        // Only seek on release when the cursor actually moved, so a plain click doesn't
+        // interrupt playback.
+        if (_cursorMoved)
+            OnCursorDrag.InvokeAsync(new CursorDragArgs(pArgs.OffsetX, true));
     }
 
     private TimeSpan PositionFromOffset(double pOffsetX)

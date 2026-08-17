@@ -44,7 +44,8 @@
                             <div title="@GetDeviceName(evt.DeviceId) @FormatTime(evt.Time) - hold Shift and drag to move"
                                  style="position: absolute; top: 4px; bottom: 4px; width: 10px; margin-left: -5px; border: 1px solid @(SelectedEvent?.Id == evt.Id ? "#000" : "#333"); border-radius: 2px; cursor: pointer; left: @(EventX(evt).ToString("0.##", System.Globalization.CultureInfo.InvariantCulture))px; background-color: @evt.ColorHex; @(_draggingEvent != null ? "pointer-events: none;" : string.Empty)"
                                  @onmousedown="e => OnEventMouseDown(evt, e)"
-                                 @onmousedown:preventDefault="true"></div>
+                                 @onmousedown:preventDefault="true"
+                                 @onmousedown:stopPropagation="true"></div>
                         }
 
                         <div style="position: absolute; top: 0; bottom: 0; left: @(CursorX.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture))px; width: 2px; background-color: red; pointer-events: none;"></div>
@@ -118,6 +119,7 @@
 
     private LightEvent? _draggingEvent;
     private bool _isDraggingCursor;
+    private bool _cursorMoved;
 
     private ElementReference _scrollContainer;
 
@@ -202,8 +204,12 @@
         if (_draggingEvent != null)
             return;
 
+        // Only the left mouse button seeks the cursor (ignore wheel/middle clicks).
+        if (pArgs.Button != 0)
+            return;
+
         _isDraggingCursor = true;
-        OnCursorDrag.InvokeAsync(new AudioTrackComponent.CursorDragArgs(pArgs.OffsetX, false));
+        _cursorMoved = false;
     }
 
     private void OnStripMouseMove(MouseEventArgs pArgs)
@@ -218,6 +224,7 @@
         if (!_isDraggingCursor)
             return;
 
+        _cursorMoved = true;
         OnCursorDrag.InvokeAsync(new AudioTrackComponent.CursorDragArgs(pArgs.OffsetX, false));
     }
 
@@ -235,7 +242,11 @@
             return;
 
         _isDraggingCursor = false;
-        OnCursorDrag.InvokeAsync(new AudioTrackComponent.CursorDragArgs(pArgs.OffsetX, true));
+
+        // Only seek on release when the cursor actually moved, so a plain click doesn't
+        // interrupt playback.
+        if (_cursorMoved)
+            OnCursorDrag.InvokeAsync(new AudioTrackComponent.CursorDragArgs(pArgs.OffsetX, true));
     }
 
     private void OnSelectedEventColorChanged(ChangeEventArgs pArgs)
