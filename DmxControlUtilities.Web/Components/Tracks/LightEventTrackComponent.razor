@@ -173,13 +173,6 @@
     {
         var hitEvent = HitTestEvent(pArgs.OffsetX);
 
-        // TEMP DIAGNOSTIC
-        var evtInfo = Track.Events.Count > 0
-            ? string.Join(", ", Track.Events.Select(e => $"t={e.Time.TotalSeconds:0.##} x={EventX(e):0.##}"))
-            : "(no events)";
-        _ = JSRuntime.InvokeVoidAsync("console.log",
-            $"[LightTrack] mousedown offsetX={pArgs.OffsetX:0.##} shift={pArgs.ShiftKey} hit={(hitEvent != null)} displayW={Display.DisplayWidth:0.##} dur={Display.Duration.TotalSeconds:0.##} events: {evtInfo}");
-
         if (hitEvent == null)
             return false;
 
