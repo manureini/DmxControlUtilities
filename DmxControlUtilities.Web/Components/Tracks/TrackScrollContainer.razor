@@ -169,7 +169,7 @@
         if (!_isDraggingCursor)
             return;
 
-        _isDraggingCursor = false;         
+        _isDraggingCursor = false;
         OnCursorDrag.InvokeAsync(new CursorDragArgs(pArgs.OffsetX, true));
     }
 
