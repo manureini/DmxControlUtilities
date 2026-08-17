@@ -169,12 +169,8 @@
         if (!_isDraggingCursor)
             return;
 
-        _isDraggingCursor = false;
-
-        // Only seek on release when the cursor actually moved, so a plain click doesn't
-        // interrupt playback.
-        if (_cursorMoved)
-            OnCursorDrag.InvokeAsync(new CursorDragArgs(pArgs.OffsetX, true));
+        _isDraggingCursor = false;         
+        OnCursorDrag.InvokeAsync(new CursorDragArgs(pArgs.OffsetX, true));
     }
 
     public record CursorDragArgs(double OffsetX, bool IsFinished);
