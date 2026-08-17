@@ -1,4 +1,5 @@
 @using DmxControlUtilities.Lib.Models
+@inject IJSRuntime JSRuntime
 
 <div style="margin-top: 1rem;">
     <div style="width: 88vw; box-sizing: border-box; overflow: hidden; border: 1px solid #ccc; border-radius: 6px; padding: 1rem; background-color: #fff;">
@@ -40,10 +41,7 @@
                         var evt = lightEvent;
 
                         <div title="@GetDeviceName(evt.DeviceId) @FormatTime(evt.Time) - hold Shift and drag to move"
-                             style="position: absolute; top: 4px; bottom: 4px; width: 10px; margin-left: -5px; border: 1px solid @(SelectedEvent?.Id == evt.Id ? "#000" : "#333"); border-radius: 2px; cursor: pointer; left: @(EventX(evt).ToString("0.##", System.Globalization.CultureInfo.InvariantCulture))px; background-color: @evt.ColorHex; @(_draggingEvent != null ? "pointer-events: none;" : string.Empty)"
-                             @onmousedown="e => OnEventMouseDown(evt, e)"
-                             @onmousedown:preventDefault="true"
-                             @onmousedown:stopPropagation="true"></div>
+                             style="position: absolute; top: 4px; bottom: 4px; width: 10px; margin-left: -5px; border: 1px solid @(SelectedEvent?.Id == evt.Id ? "#000" : "#333"); border-radius: 2px; cursor: pointer; left: @(EventX(evt).ToString("0.##", System.Globalization.CultureInfo.InvariantCulture))px; background-color: @evt.ColorHex; pointer-events: none;"></div>
                     }
                 </TrackScrollContainer>
 
@@ -113,6 +111,7 @@
     public EventCallback<TrackScrollContainer.CursorDragArgs> OnCursorDrag { get; set; }
 
     private LightEvent? _draggingEvent;
+    private double _draggingEventGrabOffsetX;
 
     /// <summary>
     /// Identifies the scroll-sync group this track belongs to (the show). Set once by the page.
@@ -147,23 +146,53 @@
         OnChanged.InvokeAsync();
     }
 
-    private void OnEventMouseDown(LightEvent pEvent, MouseEventArgs pArgs)
+    /// <summary>
+    /// Returns the event whose marker contains the given x position, or null.
+    /// </summary>
+    private LightEvent? HitTestEvent(double pOffsetX)
     {
-        SelectedEvent = pEvent;
-        SelectedEventChanged.InvokeAsync(SelectedEvent);
+        const double halfWidth = 5;
 
-        // Only start moving the event when Shift is held (same as audio files).
-        if (pArgs.ShiftKey)
-            _draggingEvent = pEvent;
+        for (int i = Track.Events.Count - 1; i >= 0; i--)
+        {
+            var evt = Track.Events[i];
+            double x = EventX(evt);
+
+            if (pOffsetX >= x - halfWidth && pOffsetX <= x + halfWidth)
+                return evt;
+        }
+
+        return null;
     }
 
     /// <summary>
-    /// Clicking on empty strip (not on an event) lets the container drag the cursor, so this
-    /// always returns false. Event dragging is started directly on the event element.
+    /// Handles selection and start of an event drag. Returns true when the mousedown hit an event,
+    /// so the container never drags the cursor for clicks on an event. Moving only starts with Shift.
     /// </summary>
     private bool OnContentMouseDown(MouseEventArgs pArgs)
     {
-        return _draggingEvent != null;
+        var hitEvent = HitTestEvent(pArgs.OffsetX);
+
+        // TEMP DIAGNOSTIC
+        var evtInfo = Track.Events.Count > 0
+            ? string.Join(", ", Track.Events.Select(e => $"t={e.Time.TotalSeconds:0.##} x={EventX(e):0.##}"))
+            : "(no events)";
+        _ = JSRuntime.InvokeVoidAsync("console.log",
+            $"[LightTrack] mousedown offsetX={pArgs.OffsetX:0.##} shift={pArgs.ShiftKey} hit={(hitEvent != null)} displayW={Display.DisplayWidth:0.##} dur={Display.Duration.TotalSeconds:0.##} events: {evtInfo}");
+
+        if (hitEvent == null)
+            return false;
+
+        SelectedEvent = hitEvent;
+        SelectedEventChanged.InvokeAsync(SelectedEvent);
+
+        if (pArgs.ShiftKey)
+        {
+            _draggingEvent = hitEvent;
+            _draggingEventGrabOffsetX = pArgs.OffsetX;
+        }
+
+        return true;
     }
 
     private void OnContentMouseMove(MouseEventArgs pArgs)
@@ -171,7 +200,10 @@
         if (_draggingEvent == null)
             return;
 
-        _draggingEvent.Time = PositionFromOffset(pArgs.OffsetX);
+        double newEventLeft = EventX(_draggingEvent) + (pArgs.OffsetX - _draggingEventGrabOffsetX);
+        _draggingEventGrabOffsetX = pArgs.OffsetX;
+
+        _draggingEvent.Time = PositionFromOffset(newEventLeft);
         OnChanged.InvokeAsync();
     }
 
@@ -180,8 +212,11 @@
         if (_draggingEvent == null)
             return;
 
-        _draggingEvent.Time = PositionFromOffset(pArgs.OffsetX);
+        var evt = _draggingEvent;
         _draggingEvent = null;
+
+        double newEventLeft = EventX(evt) + (pArgs.OffsetX - _draggingEventGrabOffsetX);
+        evt.Time = PositionFromOffset(newEventLeft);
         OnChanged.InvokeAsync();
     }
 
