@@ -1,6 +1,4 @@
 @using DmxControlUtilities.Lib.Models
-@inject IJSRuntime JSRuntime
-@implements IDisposable
 
 <div style="margin-top: 1rem;">
 
@@ -69,32 +67,29 @@
             </div>
 
             <div style="flex: 1 1 0; min-width: 0; max-width: 100%; overflow: hidden;">
-                <div @ref="_scrollContainer" style="overflow-x: auto; overflow-y: hidden; border: 1px solid #ccc; border-radius: 6px; padding: 8px; background-color: #fff;">
-                    <TimeScale Duration="Display.Duration" Width="Display.DisplayWidth" />
-                    <div style="position: relative; width: @(Display.DisplayWidth.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture))px; height: 512px; cursor: crosshair; user-select: none;"
-                         @onmousedown="OnCursorMouseDown"
-                         @onmousemove="OnCursorMouseMove"
-                         @onmouseup="OnCursorMouseUp"
-                         @onmouseleave="OnCursorMouseUp"
-                         @onwheel="OnWheel"
-                         @onwheel:preventDefault="true">
-                        @for (int i = 0; i < Track.AudioFiles.Count && i < State.ImageDataUrls.Count; i++)
-                        {
-                            var file = Track.AudioFiles[i];
-                            var imageDataUrl = State.ImageDataUrls[i];
+                <TrackScrollContainer Display="Display"
+                                      Position="Position"
+                                      ScrollGroup="@ScrollGroup"
+                                      ContentHeight="512"
+                                      OnContentMouseDown="OnContentMouseDown"
+                                      OnContentMouseMove="OnContentMouseMove"
+                                      OnContentMouseUp="OnContentMouseUp"
+                                      OnCursorDrag="OnCursorDrag">
+                    @for (int i = 0; i < Track.AudioFiles.Count && i < State.ImageDataUrls.Count; i++)
+                    {
+                        var file = Track.AudioFiles[i];
+                        var imageDataUrl = State.ImageDataUrls[i];
 
-                            if (imageDataUrl == null)
-                                continue;
+                        if (imageDataUrl == null)
+                            continue;
 
-                            <img src="@imageDataUrl"
-                                 title="@file.FileName (@FormatTime(file.StartOffset)) - hold Shift and drag to move"
-                                 style="position: absolute; top: 0; height: 512px; left: @(SegmentX(file).ToString("0.##", System.Globalization.CultureInfo.InvariantCulture))px; width: @(SegmentWidth(file).ToString("0.##", System.Globalization.CultureInfo.InvariantCulture))px; display: block; pointer-events: none;"
-                                 draggable="false"
-                                 alt="Spectrogram @file.FileName" />
-                        }
-                        <div style="position: absolute; top: 0; bottom: 0; left: @(CursorX.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture))px; width: 2px; background-color: red; pointer-events: none;"></div>
-                    </div>
-                </div>
+                        <img src="@imageDataUrl"
+                             title="@file.FileName (@FormatTime(file.StartOffset)) - hold Shift and drag to move"
+                             style="position: absolute; top: 0; height: 512px; left: @(SegmentX(file).ToString("0.##", System.Globalization.CultureInfo.InvariantCulture))px; width: @(SegmentWidth(file).ToString("0.##", System.Globalization.CultureInfo.InvariantCulture))px; display: block; pointer-events: none;"
+                             draggable="false"
+                             alt="Spectrogram @file.FileName" />
+                    }
+                </TrackScrollContainer>
             </div>
         </div>
     </div>
@@ -121,7 +116,7 @@
     public EventCallback OnSettingsChanged { get; set; }
 
     [Parameter]
-    public EventCallback<CursorDragArgs> OnCursorDrag { get; set; }
+    public EventCallback<TrackScrollContainer.CursorDragArgs> OnCursorDrag { get; set; }
 
     [Parameter]
     public EventCallback OnRemove { get; set; }
@@ -172,30 +167,15 @@
         Modal.Show<AddAudioFileModal>("Add audio file", parameters);
     }
 
-    private bool _isDraggingCursor;
-    private bool _cursorMoved;
     private TimecodeAudioFile? mDraggingFile;
     private double mDraggingFileGrabOffsetX;
     private bool mMoved;
-
-    private ElementReference _scrollContainer;
 
     /// <summary>
     /// Identifies the scroll-sync group this track belongs to (the show). Set once by the page.
     /// </summary>
     [Parameter]
     public string ScrollGroup { get; set; } = "show";
-
-    protected override async Task OnAfterRenderAsync(bool firstRender)
-    {
-        if (firstRender)
-            await JSRuntime.InvokeVoidAsync("registerTrackScroll", ScrollGroup, _scrollContainer);
-    }
-
-    public void Dispose()
-    {
-        _ = JSRuntime.InvokeVoidAsync("unregisterTrackScroll", ScrollGroup, _scrollContainer);
-    }
 
     private void ToggleMute()
     {
@@ -208,10 +188,6 @@
         SelectedFileId = pFile.Id;
         SelectedFileIdChanged.InvokeAsync(pFile.Id);
     }
-
-    private double CursorX => Display.Duration > TimeSpan.Zero
-        ? Position.TotalSeconds / Display.Duration.TotalSeconds * Display.DisplayWidth
-        : 0;
 
     private double SegmentX(TimecodeAudioFile pFile) => pFile.StartOffset.TotalSeconds * Display.PixelsPerSecond;
 
@@ -247,23 +223,6 @@
         return null;
     }
 
-    private async void OnWheel(WheelEventArgs pArgs)
-    {
-        // Shift or Ctrl + wheel scrolls horizontally instead of zooming.
-        if (pArgs.ShiftKey || pArgs.CtrlKey)
-        {
-            await JSRuntime.InvokeVoidAsync("scrollTrackBy", _scrollContainer, pArgs.DeltaY);
-            return;
-        }
-
-        if (Display.BaseWidth <= 0)
-            return;
-
-        double factor = pArgs.DeltaY < 0 ? 1.2 : 1 / 1.2;
-
-        Display.Zoom = Display.Zoom * factor;
-    }
-
     private void OnSettingChanged(ChangeEventArgs pArgs, Action<double> pApply)
     {
         if (double.TryParse(pArgs.Value?.ToString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double value))
@@ -273,7 +232,11 @@
         }
     }
 
-    private void OnCursorMouseDown(MouseEventArgs pArgs)
+    /// <summary>
+    /// Handles selection and start of a file drag. Returns true when a file is being dragged,
+    /// so the container leaves mouse handling to this track instead of dragging the cursor.
+    /// </summary>
+    private bool OnContentMouseDown(MouseEventArgs pArgs)
     {
         mMoved = false;
 
@@ -282,66 +245,39 @@
         if (hitFile != null)
             SelectFile(hitFile);
 
-        if (pArgs.ShiftKey)
+        if (pArgs.ShiftKey && hitFile != null)
         {
-            if (hitFile != null)
-            {
-                mDraggingFile = hitFile;
-                mDraggingFileGrabOffsetX = pArgs.OffsetX;
-            }
-
-            return;
-        }
-
-        // Only the left mouse button seeks the cursor (ignore wheel/middle clicks).
-        if (pArgs.Button != 0)
-            return;
-
-        _isDraggingCursor = true;
-        _cursorMoved = false;
-    }
-
-    private void OnCursorMouseMove(MouseEventArgs pArgs)
-    {
-        if (mDraggingFile != null)
-        {
-            mMoved = true;
-
-            double newSegmentLeft = SegmentX(mDraggingFile) + (pArgs.OffsetX - mDraggingFileGrabOffsetX);
+            mDraggingFile = hitFile;
             mDraggingFileGrabOffsetX = pArgs.OffsetX;
-
-            OnFileDrag.InvokeAsync(new FileDragArgs(mDraggingFile.Id, PositionFromOffset(newSegmentLeft), false));
-            return;
+            return true;
         }
 
-        if (!_isDraggingCursor)
-            return;
-
-        _cursorMoved = true;
-        OnCursorDrag.InvokeAsync(new CursorDragArgs(pArgs.OffsetX, false));
+        return false;
     }
 
-    private void OnCursorMouseUp(MouseEventArgs pArgs)
+    private void OnContentMouseMove(MouseEventArgs pArgs)
     {
-        if (mDraggingFile != null)
-        {
-            var file = mDraggingFile;
-            mDraggingFile = null;
-
-            double newSegmentLeft = SegmentX(file) + (pArgs.OffsetX - mDraggingFileGrabOffsetX);
-            OnFileDrag.InvokeAsync(new FileDragArgs(file.Id, PositionFromOffset(newSegmentLeft), true));
-            return;
-        }
-
-        if (!_isDraggingCursor)
+        if (mDraggingFile == null)
             return;
 
-        _isDraggingCursor = false;
+        mMoved = true;
 
-        // Only seek on release when the cursor actually moved, so a plain click doesn't
-        // interrupt playback.
-        if (_cursorMoved)
-            OnCursorDrag.InvokeAsync(new CursorDragArgs(pArgs.OffsetX, true));
+        double newSegmentLeft = SegmentX(mDraggingFile) + (pArgs.OffsetX - mDraggingFileGrabOffsetX);
+        mDraggingFileGrabOffsetX = pArgs.OffsetX;
+
+        OnFileDrag.InvokeAsync(new FileDragArgs(mDraggingFile.Id, PositionFromOffset(newSegmentLeft), false));
+    }
+
+    private void OnContentMouseUp(MouseEventArgs pArgs)
+    {
+        if (mDraggingFile == null)
+            return;
+
+        var file = mDraggingFile;
+        mDraggingFile = null;
+
+        double newSegmentLeft = SegmentX(file) + (pArgs.OffsetX - mDraggingFileGrabOffsetX);
+        OnFileDrag.InvokeAsync(new FileDragArgs(file.Id, PositionFromOffset(newSegmentLeft), true));
     }
 
     private TimeSpan PositionFromOffset(double pOffsetX)
@@ -352,8 +288,6 @@
         double fraction = Math.Clamp(pOffsetX / Display.DisplayWidth, 0, 1);
         return TimeSpan.FromSeconds(fraction * Display.Duration.TotalSeconds);
     }
-
-    public record CursorDragArgs(double OffsetX, bool IsFinished);
 
     public record FileDragArgs(Guid FileId, TimeSpan NewStartOffset, bool IsFinished);
 

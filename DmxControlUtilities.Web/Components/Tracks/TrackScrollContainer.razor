@@ -1,0 +1,181 @@
+@inject IJSRuntime JSRuntime
+@implements IDisposable
+
+<div @ref="_scrollContainer" style="overflow-x: auto; overflow-y: hidden; border: 1px solid #ccc; border-radius: 6px; padding: 8px; background-color: #fff;">
+    <TimeScale Duration="Display.Duration" Width="Display.DisplayWidth" Height="@TimeScaleHeight" MinTickSpacingPx="100" />
+    <div style="position: relative; width: @(Display.DisplayWidth.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture))px; height: @(ContentHeightPx)px; @(ContentStyle) cursor: crosshair; user-select: none;"
+         @onmousedown="OnMouseDown"
+         @onmousemove="OnMouseMove"
+         @onmouseup="OnMouseUp"
+         @onmouseleave="OnMouseUp"
+         @onwheel="OnWheel"
+         @onwheel:preventDefault="true">
+        @ChildContent
+        <div style="position: absolute; top: 0; bottom: 0; left: @(CursorX.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture))px; width: 2px; background-color: red; pointer-events: none;"></div>
+    </div>
+</div>
+
+@code {
+
+    /// <summary>
+    /// Shared display state (zoom, duration) so all tracks align in a grid.
+    /// </summary>
+    [Parameter]
+    public TrackDisplayState Display { get; set; } = null!;
+
+    /// <summary>
+    /// The current playback position (drives the red cursor line).
+    /// </summary>
+    [Parameter]
+    public TimeSpan Position { get; set; }
+
+    /// <summary>
+    /// Identifies the scroll-sync group this track belongs to (the show). Set once by the page.
+    /// </summary>
+    [Parameter]
+    public string ScrollGroup { get; set; } = "show";
+
+    /// <summary>
+    /// Height of the draggable content area in pixels.
+    /// </summary>
+    [Parameter]
+    public int ContentHeight { get; set; } = 64;
+
+    /// <summary>
+    /// Extra inline style applied to the draggable content area (background, borders, ...).
+    /// </summary>
+    [Parameter]
+    public string ContentStyle { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Height of the time scale in pixels.
+    /// </summary>
+    [Parameter]
+    public int TimeScaleHeight { get; set; } = 16;
+
+    /// <summary>
+    /// The track-specific content rendered inside the draggable area (spectrogram images, event blocks, ...).
+    /// </summary>
+    [Parameter]
+    public RenderFragment? ChildContent { get; set; }
+
+    /// <summary>
+    /// Raised on mousedown in the content area. Handlers should return true when they started
+    /// dragging their own element (file/event) and false to let the container drag the cursor.
+    /// </summary>
+    [Parameter]
+    public Func<MouseEventArgs, bool>? OnContentMouseDown { get; set; }
+
+    /// <summary>
+    /// Raised on mousemove while the track is dragging one of its own elements (after
+    /// OnContentMouseDown returned true).
+    /// </summary>
+    [Parameter]
+    public EventCallback<MouseEventArgs> OnContentMouseMove { get; set; }
+
+    /// <summary>
+    /// Raised on mouseup while the track is dragging one of its own elements (after
+    /// OnContentMouseDown returned true).
+    /// </summary>
+    [Parameter]
+    public EventCallback<MouseEventArgs> OnContentMouseUp { get; set; }
+
+    /// <summary>
+    /// Raised while the user drags the playback cursor (scrub).
+    /// </summary>
+    [Parameter]
+    public EventCallback<CursorDragArgs> OnCursorDrag { get; set; }
+
+    private ElementReference _scrollContainer;
+
+    private bool _isDraggingCursor;
+    private bool _cursorMoved;
+    private bool _contentDragging;
+
+    private string ContentHeightPx => ContentHeight.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+    private double CursorX => Display.Duration > TimeSpan.Zero
+        ? Math.Clamp(Position.TotalSeconds / Display.Duration.TotalSeconds, 0, 1) * Display.DisplayWidth
+        : 0;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+            await JSRuntime.InvokeVoidAsync("registerTrackScroll", ScrollGroup, _scrollContainer);
+    }
+
+    public void Dispose()
+    {
+        _ = JSRuntime.InvokeVoidAsync("unregisterTrackScroll", ScrollGroup, _scrollContainer);
+    }
+
+    private async void OnWheel(WheelEventArgs pArgs)
+    {
+        // Shift or Ctrl + wheel scrolls horizontally instead of zooming.
+        if (pArgs.ShiftKey || pArgs.CtrlKey)
+        {
+            await JSRuntime.InvokeVoidAsync("scrollTrackBy", _scrollContainer, pArgs.DeltaY);
+            return;
+        }
+
+        if (Display.BaseWidth <= 0)
+            return;
+
+        double factor = pArgs.DeltaY < 0 ? 1.2 : 1 / 1.2;
+
+        Display.Zoom = Display.Zoom * factor;
+    }
+
+    private void OnMouseDown(MouseEventArgs pArgs)
+    {
+        // Let the track handle its own elements first (select/drag file or event).
+        _contentDragging = OnContentMouseDown?.Invoke(pArgs) == true;
+
+        if (_contentDragging)
+            return;
+
+        // Only the left mouse button seeks the cursor (ignore wheel/middle clicks).
+        if (pArgs.Button != 0)
+            return;
+
+        _isDraggingCursor = true;
+        _cursorMoved = false;
+    }
+
+    private void OnMouseMove(MouseEventArgs pArgs)
+    {
+        if (_contentDragging)
+        {
+            OnContentMouseMove.InvokeAsync(pArgs);
+            return;
+        }
+
+        if (!_isDraggingCursor)
+            return;
+
+        _cursorMoved = true;
+        OnCursorDrag.InvokeAsync(new CursorDragArgs(pArgs.OffsetX, false));
+    }
+
+    private void OnMouseUp(MouseEventArgs pArgs)
+    {
+        if (_contentDragging)
+        {
+            _contentDragging = false;
+            OnContentMouseUp.InvokeAsync(pArgs);
+            return;
+        }
+
+        if (!_isDraggingCursor)
+            return;
+
+        _isDraggingCursor = false;
+
+        // Only seek on release when the cursor actually moved, so a plain click doesn't
+        // interrupt playback.
+        if (_cursorMoved)
+            OnCursorDrag.InvokeAsync(new CursorDragArgs(pArgs.OffsetX, true));
+    }
+
+    public record CursorDragArgs(double OffsetX, bool IsFinished);
+}

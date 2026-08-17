@@ -748,17 +748,17 @@ else
         StateHasChanged();
     }
 
-    private void OnCursorDrag(TimecodeAudioTrack pTrack, AudioTrackComponent.CursorDragArgs pArgs)
+    private void OnCursorDrag(TimecodeAudioTrack pTrack, TrackScrollContainer.CursorDragArgs pArgs)
     {
         SeekFromCursorDrag(pArgs);
     }
 
-    private void OnLightCursorDrag(AudioTrackComponent.CursorDragArgs pArgs)
+    private void OnLightCursorDrag(TrackScrollContainer.CursorDragArgs pArgs)
     {
         SeekFromCursorDrag(pArgs);
     }
 
-    private void SeekFromCursorDrag(AudioTrackComponent.CursorDragArgs pArgs)
+    private void SeekFromCursorDrag(TrackScrollContainer.CursorDragArgs pArgs)
     {
         var position = PositionFromOffset(Guid.Empty, pArgs.OffsetX);
 

@@ -1,6 +1,4 @@
 @using DmxControlUtilities.Lib.Models
-@inject IJSRuntime JSRuntime
-@implements IDisposable
 
 <div style="margin-top: 1rem;">
     <div style="width: 88vw; box-sizing: border-box; overflow: hidden; border: 1px solid #ccc; border-radius: 6px; padding: 1rem; background-color: #fff;">
@@ -28,29 +26,26 @@
             </div>
 
             <div style="flex: 1 1 0; min-width: 0; max-width: 100%; overflow: hidden; display: flex; flex-direction: column;">
-                <div @ref="_scrollContainer" style="overflow-x: auto; overflow-y: hidden; border: 1px solid #ccc; border-radius: 6px; padding: 8px; background-color: #fff; flex: 1 1 auto;">
-                    <TimeScale Duration="Display.Duration" Width="Display.DisplayWidth" Height="16" MinTickSpacingPx="100" />
-                    <div style="position: relative; width: @(Display.DisplayWidth.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture))px; height: 64px; background-color: #f5f5f5; border: 1px solid #ccc; border-top: none; border-radius: 0 0 4px 4px; cursor: crosshair; user-select: none;"
-                         @onmousedown="OnStripMouseDown"
-                         @onmousemove="OnStripMouseMove"
-                         @onmouseup="OnStripMouseUp"
-                         @onmouseleave="OnStripMouseUp"
-                         @onwheel="OnWheel"
-                         @onwheel:preventDefault="true">
-                        @foreach (var lightEvent in Track.Events.OrderBy(e => e.Time))
-                        {
-                            var evt = lightEvent;
+                <TrackScrollContainer Display="Display"
+                                      Position="Position"
+                                      ScrollGroup="@ScrollGroup"
+                                      ContentHeight="64"
+                                      ContentStyle="background-color: #f5f5f5; border: 1px solid #ccc; border-top: none; border-radius: 0 0 4px 4px;"
+                                      OnContentMouseDown="OnContentMouseDown"
+                                      OnContentMouseMove="OnContentMouseMove"
+                                      OnContentMouseUp="OnContentMouseUp"
+                                      OnCursorDrag="OnCursorDrag">
+                    @foreach (var lightEvent in Track.Events.OrderBy(e => e.Time))
+                    {
+                        var evt = lightEvent;
 
-                            <div title="@GetDeviceName(evt.DeviceId) @FormatTime(evt.Time) - hold Shift and drag to move"
-                                 style="position: absolute; top: 4px; bottom: 4px; width: 10px; margin-left: -5px; border: 1px solid @(SelectedEvent?.Id == evt.Id ? "#000" : "#333"); border-radius: 2px; cursor: pointer; left: @(EventX(evt).ToString("0.##", System.Globalization.CultureInfo.InvariantCulture))px; background-color: @evt.ColorHex; @(_draggingEvent != null ? "pointer-events: none;" : string.Empty)"
-                                 @onmousedown="e => OnEventMouseDown(evt, e)"
-                                 @onmousedown:preventDefault="true"
-                                 @onmousedown:stopPropagation="true"></div>
-                        }
-
-                        <div style="position: absolute; top: 0; bottom: 0; left: @(CursorX.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture))px; width: 2px; background-color: red; pointer-events: none;"></div>
-                    </div>
-                </div>
+                        <div title="@GetDeviceName(evt.DeviceId) @FormatTime(evt.Time) - hold Shift and drag to move"
+                             style="position: absolute; top: 4px; bottom: 4px; width: 10px; margin-left: -5px; border: 1px solid @(SelectedEvent?.Id == evt.Id ? "#000" : "#333"); border-radius: 2px; cursor: pointer; left: @(EventX(evt).ToString("0.##", System.Globalization.CultureInfo.InvariantCulture))px; background-color: @evt.ColorHex; @(_draggingEvent != null ? "pointer-events: none;" : string.Empty)"
+                             @onmousedown="e => OnEventMouseDown(evt, e)"
+                             @onmousedown:preventDefault="true"
+                             @onmousedown:stopPropagation="true"></div>
+                    }
+                </TrackScrollContainer>
 
                 @if (SelectedEvent != null)
                 {
@@ -115,13 +110,9 @@
     /// Raised while the user clicks/drags on the strip to move the playback cursor.
     /// </summary>
     [Parameter]
-    public EventCallback<AudioTrackComponent.CursorDragArgs> OnCursorDrag { get; set; }
+    public EventCallback<TrackScrollContainer.CursorDragArgs> OnCursorDrag { get; set; }
 
     private LightEvent? _draggingEvent;
-    private bool _isDraggingCursor;
-    private bool _cursorMoved;
-
-    private ElementReference _scrollContainer;
 
     /// <summary>
     /// Identifies the scroll-sync group this track belongs to (the show). Set once by the page.
@@ -129,41 +120,9 @@
     [Parameter]
     public string ScrollGroup { get; set; } = "show";
 
-    private double CursorX => Display.Duration > TimeSpan.Zero
-        ? Math.Clamp(Position.TotalSeconds / Display.Duration.TotalSeconds, 0, 1) * Display.DisplayWidth
-        : 0;
-
     private double EventX(LightEvent pEvent) => Display.Duration > TimeSpan.Zero
         ? Math.Clamp(pEvent.Time.TotalSeconds / Display.Duration.TotalSeconds, 0, 1) * Display.DisplayWidth
         : 0;
-
-    protected override async Task OnAfterRenderAsync(bool firstRender)
-    {
-        if (firstRender)
-            await JSRuntime.InvokeVoidAsync("registerTrackScroll", ScrollGroup, _scrollContainer);
-    }
-
-    public void Dispose()
-    {
-        _ = JSRuntime.InvokeVoidAsync("unregisterTrackScroll", ScrollGroup, _scrollContainer);
-    }
-
-    private async void OnWheel(WheelEventArgs pArgs)
-    {
-        // Shift or Ctrl + wheel scrolls horizontally instead of zooming.
-        if (pArgs.ShiftKey || pArgs.CtrlKey)
-        {
-            await JSRuntime.InvokeVoidAsync("scrollTrackBy", _scrollContainer, pArgs.DeltaY);
-            return;
-        }
-
-        if (Display.BaseWidth <= 0)
-            return;
-
-        double factor = pArgs.DeltaY < 0 ? 1.2 : 1 / 1.2;
-
-        Display.Zoom = Display.Zoom * factor;
-    }
 
     private string GetDeviceName(Guid pDeviceId)
     {
@@ -198,55 +157,32 @@
             _draggingEvent = pEvent;
     }
 
-    private void OnStripMouseDown(MouseEventArgs pArgs)
+    /// <summary>
+    /// Clicking on empty strip (not on an event) lets the container drag the cursor, so this
+    /// always returns false. Event dragging is started directly on the event element.
+    /// </summary>
+    private bool OnContentMouseDown(MouseEventArgs pArgs)
     {
-        // Clicking on empty strip (not on an event) starts a cursor seek/drag.
-        if (_draggingEvent != null)
-            return;
-
-        // Only the left mouse button seeks the cursor (ignore wheel/middle clicks).
-        if (pArgs.Button != 0)
-            return;
-
-        _isDraggingCursor = true;
-        _cursorMoved = false;
+        return _draggingEvent != null;
     }
 
-    private void OnStripMouseMove(MouseEventArgs pArgs)
+    private void OnContentMouseMove(MouseEventArgs pArgs)
     {
-        if (_draggingEvent != null)
-        {
-            _draggingEvent.Time = PositionFromOffset(pArgs.OffsetX);
-            OnChanged.InvokeAsync();
-            return;
-        }
-
-        if (!_isDraggingCursor)
+        if (_draggingEvent == null)
             return;
 
-        _cursorMoved = true;
-        OnCursorDrag.InvokeAsync(new AudioTrackComponent.CursorDragArgs(pArgs.OffsetX, false));
+        _draggingEvent.Time = PositionFromOffset(pArgs.OffsetX);
+        OnChanged.InvokeAsync();
     }
 
-    private void OnStripMouseUp(MouseEventArgs pArgs)
+    private void OnContentMouseUp(MouseEventArgs pArgs)
     {
-        if (_draggingEvent != null)
-        {
-            _draggingEvent.Time = PositionFromOffset(pArgs.OffsetX);
-            _draggingEvent = null;
-            OnChanged.InvokeAsync();
-            return;
-        }
-
-        if (!_isDraggingCursor)
+        if (_draggingEvent == null)
             return;
 
-        _isDraggingCursor = false;
-
-        // Only seek on release when the cursor actually moved, so a plain click doesn't
-        // interrupt playback.
-        if (_cursorMoved)
-            OnCursorDrag.InvokeAsync(new AudioTrackComponent.CursorDragArgs(pArgs.OffsetX, true));
+        _draggingEvent.Time = PositionFromOffset(pArgs.OffsetX);
+        _draggingEvent = null;
+        OnChanged.InvokeAsync();
     }
 
     private void OnSelectedEventColorChanged(ChangeEventArgs pArgs)
