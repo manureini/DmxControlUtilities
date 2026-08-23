@@ -3,6 +3,7 @@
 @using DmxControlUtilities.Lib.Services
 
 @inject DmxFtdiService DmxService
+@inject DeviceService DeviceService
 @implements IDisposable
 
 <PageTitle>Channels</PageTitle>
@@ -25,6 +26,14 @@
                    @oninput="e => OnValueChanged(channel, e)" />
 
             <div class="channel-value">@mValues[channel]</div>
+
+            @if (GetUsage(channel) is var usage && usage != null)
+            {
+                <div class="channel-usage" title="@usage.Value.DeviceName">
+                    <span class="channel-device">@usage.Value.DeviceName</span>
+                    <span class="channel-function">@usage.Value.FunctionName</span>
+                </div>
+            }
         </div>
     }
 </div>
@@ -57,16 +66,48 @@
     .channel-value {
         font-weight: bold;
     }
+
+    .channel-usage {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        margin-top: 2px;
+        width: 100%;
+        overflow: hidden;
+    }
+
+    .channel-device,
+    .channel-function {
+        max-width: 100%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        line-height: 1.1;
+    }
+
+    .channel-device {
+        font-size: 0.68rem;
+        font-weight: 600;
+        color: #0d6efd;
+    }
+
+    .channel-function {
+        font-size: 0.68rem;
+        color: #666;
+    }
 </style>
 
 @code {
 
     protected byte[] mValues = new byte[513];
 
+    private Dictionary<int, (string DeviceName, string FunctionName)>? mUsage;
+
     private System.Timers.Timer? _timer;
 
     protected override void OnInitialized()
     {
+        BuildUsageMap();
         RefreshValues();
 
         _timer = new System.Timers.Timer(500);
@@ -94,6 +135,37 @@
 
         mValues[pChannel] = value;
         DmxService.SetChannel(pChannel, value);
+    }
+
+    private (string DeviceName, string FunctionName)? GetUsage(int pChannel)
+    {
+        return mUsage != null && mUsage.TryGetValue(pChannel, out var usage) ? usage : null;
+    }
+
+    /// <summary>
+    /// Maps each absolute DMX channel to the device and function occupying it.
+    /// </summary>
+    private void BuildUsageMap()
+    {
+        var map = new Dictionary<int, (string, string)>();
+
+        foreach (var device in DeviceService.Devices)
+        {
+            var description = DeviceService.GetDescription(device);
+
+            if (description == null)
+                continue;
+
+            foreach (var function in description.Functions)
+            {
+                int channel = device.Channel + function.DmxChannel;
+
+                if (channel >= 1 && channel <= 512)
+                    map[channel] = (device.Name, function.Name);
+            }
+        }
+
+        mUsage = map;
     }
 
     public void Dispose()
