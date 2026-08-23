@@ -191,12 +191,6 @@ namespace DmxControlUtilities.Lib.Services
                     continue;
                 }
 
-                // Sleep coarsely, then spin the last ~2 ms for an accurate frame period.
-                long remainingMs = (nextFrame - now) * 1000 / Stopwatch.Frequency;
-
-                if (remainingMs > 2)
-                    Thread.Sleep((int)(remainingMs - 2));
-
                 while (mRunning && Stopwatch.GetTimestamp() < nextFrame)
                 {
                     Thread.SpinWait(100);
