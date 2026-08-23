@@ -1,5 +1,8 @@
 @using DmxControlUtilities.Lib.Models
 @using DmxControlUtilities.Lib.Models.Ddf
+@using DmxControlUtilities.Lib.Services.Hal
+
+@inject HalService Hal
 
 <div class="mb-2">
     <label class="form-label">@Function.Name: @Value@(CurrentStepCaption != null ? $" ({CurrentStepCaption})" : "")</label>
@@ -65,7 +68,7 @@
 
     private void SetValue(byte pValue)
     {
-        Device.SetValue(Function.Key, pValue);
+        Hal.SetValue(Device, Function.Key, pValue);
         OnValueChanged.InvokeAsync();
     }
 }
