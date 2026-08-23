@@ -2,10 +2,12 @@
 
 @using DmxControlUtilities.Lib.Models
 @using DmxControlUtilities.Lib.Services
+@using DmxControlUtilities.Lib.Services.Hal
 @using DmxControlUtilities.Web.Components.Devices
 @using MComponents.MGrid
 
 @inject DeviceService DeviceService
+@inject HalService HalService
 @inject NavigationManager NavigationManager
 @inject IModalService Modal
 
@@ -23,7 +25,7 @@
     <MGridComplexColumn T="Device" Identifier="Color" HeaderText="Color">
         <CellTemplate Context="device">
             @{
-                var rgb = device.GetRgb();
+                var rgb = HalService.GetColor(device);
             }
             <span style="display: inline-block; width: 1.2rem; height: 1.2rem; border: 1px solid #333; background-color: rgb(@rgb.R, @rgb.G, @rgb.B);"></span>
         </CellTemplate>

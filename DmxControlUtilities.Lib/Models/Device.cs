@@ -37,15 +37,5 @@ namespace DmxControlUtilities.Lib.Models
         {
             Values[pKey] = pValue;
         }
-
-        /// <summary>
-        /// Approximate RGB color of the device based on its rgb functions (for display in grids/timelines).
-        /// </summary>
-        public (byte R, byte G, byte B) GetRgb()
-        {
-            return (GetValue(DdfChannelKey.Rgb(ColorChannel.Red)),
-                GetValue(DdfChannelKey.Rgb(ColorChannel.Green)),
-                GetValue(DdfChannelKey.Rgb(ColorChannel.Blue)));
-        }
     }
 }
