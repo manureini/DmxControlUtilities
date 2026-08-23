@@ -1,0 +1,25 @@
+@using DmxControlUtilities.Lib.Services.Hal
+
+@* Renders the editor matching the feature's FeatureType. *@
+
+@if (Feature.Type == FeatureType.Color && Feature is HalService.ColorFeature color)
+{
+    <ColorFeatureEditor Feature="color" OnValueChanged="OnValueChanged" />
+}
+else if (Feature.Type == FeatureType.Position && Feature is HalService.PositionFeature position)
+{
+    <PositionFeatureEditor Feature="position" OnValueChanged="OnValueChanged" />
+}
+else
+{
+    <SliderFeatureEditor Feature="Feature" OnValueChanged="OnValueChanged" />
+}
+
+@code {
+
+    [Parameter]
+    public HalFeature Feature { get; set; } = null!;
+
+    [Parameter]
+    public EventCallback OnValueChanged { get; set; }
+}

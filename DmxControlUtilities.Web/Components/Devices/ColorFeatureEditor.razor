@@ -1,0 +1,39 @@
+@using DmxControlUtilities.Lib.Services.Hal
+
+<div class="mb-2">
+    <label class="form-label">@Feature.Name</label>
+
+    <div>
+        <input type="color" class="form-control form-control-color" value="@ColorHex"
+               @oninput="OnColorChanged" @onchange="OnColorChanged" />
+    </div>
+</div>
+
+@code {
+
+    [Parameter]
+    public HalService.ColorFeature Feature { get; set; } = null!;
+
+    [Parameter]
+    public EventCallback OnValueChanged { get; set; }
+
+    private string ColorHex
+    {
+        get
+        {
+            var (r, g, b) = Feature.GetColor();
+            return $"#{r:x2}{g:x2}{b:x2}";
+        }
+    }
+
+    private void OnColorChanged(ChangeEventArgs pArgs)
+    {
+        var color = HalColor.FromHex(pArgs.Value?.ToString());
+
+        if (color == null)
+            return;
+
+        Feature.SetColor(color.Value.R, color.Value.G, color.Value.B);
+        OnValueChanged.InvokeAsync();
+    }
+}

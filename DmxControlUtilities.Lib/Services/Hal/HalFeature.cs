@@ -15,6 +15,9 @@ namespace DmxControlUtilities.Lib.Services.Hal
     /// </summary>
     public abstract class HalFeature
     {
+        internal readonly HalService mHal;
+        internal readonly Device mDevice;
+
         /// <summary>
         /// The kind of feature, derived from the DDF element it originates from.
         /// </summary>
@@ -27,8 +30,10 @@ namespace DmxControlUtilities.Lib.Services.Hal
         /// </summary>
         public string Name { get; }
 
-        protected HalFeature(FeatureType pType, string pName)
+        protected HalFeature(HalService pHal, Device pDevice, FeatureType pType, string pName)
         {
+            mHal = pHal;
+            mDevice = pDevice;
             Type = pType;
             Name = pName;
         }

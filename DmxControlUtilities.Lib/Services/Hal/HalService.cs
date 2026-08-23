@@ -20,15 +20,26 @@ namespace DmxControlUtilities.Lib.Services.Hal
         private const int mDefaultColorTempKelvin = 6500;
 
         private readonly DeviceDescriptionService mDescriptionService;
+        private readonly DeviceService? mDeviceService;
 
-        public HalService(DeviceDescriptionService pDescriptionService)
+        public HalService(DeviceDescriptionService pDescriptionService, DeviceService? pDeviceService = null)
         {
             mDescriptionService = pDescriptionService;
+            mDeviceService = pDeviceService;
         }
 
         private DeviceDescription? GetDescription(Device pDevice)
         {
             return mDescriptionService.GetDescription(pDevice.DescriptionId);
+        }
+
+        /// <summary>
+        /// Pushes the device's current values to the DMX universe. Called automatically by the
+        /// typed setters; only call this directly when values were changed outside of them.
+        /// </summary>
+        public void Apply(Device pDevice)
+        {
+            mDeviceService?.ApplyDevice(pDevice);
         }
 
         #region Color
@@ -40,6 +51,12 @@ namespace DmxControlUtilities.Lib.Services.Hal
         /// </summary>
         public void SetColor(Device pDevice, byte pR, byte pG, byte pB)
         {
+            SetColorCore(pDevice, pR, pG, pB);
+            Apply(pDevice);
+        }
+
+        private void SetColorCore(Device pDevice, byte pR, byte pG, byte pB)
+        {
             var description = GetDescription(pDevice);
 
             if (description == null)
@@ -49,12 +66,19 @@ namespace DmxControlUtilities.Lib.Services.Hal
 
             bool handled = false;
 
+            // Additional LED colors (white/amber) are mixed in per the device's
+            // whitechanneldefaultmode / amberchanneldefaultmode automix settings.
+            ApplyWhiteAmberAutomix(description, ref r, ref g, ref b, out double white, out double amber);
+
             // RGB (direct), including extended colors white/amber/uv are left untouched.
             if (SetIfPresent(pDevice, description, DdfChannelKey.Rgb(ColorChannel.Red), ToByte(r)) |
                 SetIfPresent(pDevice, description, DdfChannelKey.Rgb(ColorChannel.Green), ToByte(g)) |
                 SetIfPresent(pDevice, description, DdfChannelKey.Rgb(ColorChannel.Blue), ToByte(b)))
             {
                 handled = true;
+
+                SetIfPresent(pDevice, description, DdfChannelKey.Rgb(ColorChannel.White), ToByte(white));
+                SetIfPresent(pDevice, description, DdfChannelKey.Rgb(ColorChannel.Amber), ToByte(amber));
             }
 
             // CMY (subtractive).
@@ -88,7 +112,7 @@ namespace DmxControlUtilities.Lib.Services.Hal
             // Color wheel: pick nearest fixed color.
             if (!handled)
             {
-                var wheel = description.GetFunctionsByType(FeatureType.Colorwheel).FirstOrDefault();
+                var wheel = description.GetFunctionsByType(DdfFunctionType.Colorwheel).FirstOrDefault();
 
                 if (wheel != null && wheel.Steps.Count > 0)
                 {
@@ -100,6 +124,42 @@ namespace DmxControlUtilities.Lib.Services.Hal
                         pDevice.SetValue(wheel.Key, (byte)wheel.Steps[index].MinDmx);
                     }
                 }
+            }
+        }
+
+        /// <summary>
+        /// Computes the white/amber LED contributions from an RGB color (all 0..1) according to the
+        /// device's whitechanneldefaultmode/amberchanneldefaultmode. May reduce r/g/b for "onlywhite".
+        /// Returns the white and amber channel intensities (0..1).
+        /// </summary>
+        private static void ApplyWhiteAmberAutomix(DeviceDescription pDescription, ref double r, ref double g, ref double b, out double pWhite, out double pAmber)
+        {
+            pWhite = 0;
+            pAmber = 0;
+
+            // Amber is derived from the original color's hue, before any white reduction.
+            if (pDescription.AmberChannelDefaultMode == "add")
+            {
+                var (h, _, v) = HalColor.RgbToHsv(r, g, b);
+                pAmber = HalColor.TrapezoidIntensity(h, 0, 60, 60, 120) * v;
+            }
+
+            double white = Math.Min(r, Math.Min(g, b));
+
+            switch (pDescription.WhiteChannelDefaultMode)
+            {
+                case "addwhite":
+                    // All four LEDs at full for white: keep rgb, add white on top.
+                    pWhite = white;
+                    break;
+
+                case "onlywhite":
+                    // Only the white LED for white: subtract the white component from rgb.
+                    pWhite = white;
+                    r -= white;
+                    g -= white;
+                    b -= white;
+                    break;
             }
         }
 
@@ -144,7 +204,7 @@ namespace DmxControlUtilities.Lib.Services.Hal
             }
 
             // Color wheel: read the hex of the active step.
-            var wheel = description.GetFunctionsByType(FeatureType.Colorwheel).FirstOrDefault();
+            var wheel = description.GetFunctionsByType(DdfFunctionType.Colorwheel).FirstOrDefault();
 
             if (wheel != null)
             {
@@ -168,6 +228,12 @@ namespace DmxControlUtilities.Lib.Services.Hal
         /// otherwise scales the rgb channels virtually (HAL virtual dimmer).
         /// </summary>
         public void SetDimmer(Device pDevice, double pValue)
+        {
+            SetDimmerCore(pDevice, pValue);
+            Apply(pDevice);
+        }
+
+        private void SetDimmerCore(Device pDevice, double pValue)
         {
             var description = GetDescription(pDevice);
 
@@ -223,6 +289,12 @@ namespace DmxControlUtilities.Lib.Services.Hal
         /// Sets pan/tilt 0..1 each. 16-bit (fine) channels are set when present.
         /// </summary>
         public void SetPosition(Device pDevice, double pPan, double pTilt)
+        {
+            SetPositionCore(pDevice, pPan, pTilt);
+            Apply(pDevice);
+        }
+
+        private void SetPositionCore(Device pDevice, double pPan, double pTilt)
         {
             var description = GetDescription(pDevice);
 
@@ -308,6 +380,7 @@ namespace DmxControlUtilities.Lib.Services.Hal
 
             int dmx = (int)Math.Round(minDmx + fraction * (maxDmx - minDmx));
             pDevice.SetValue(colortemp.Key, (byte)Math.Clamp(dmx, 0, 255));
+            Apply(pDevice);
         }
 
         /// <summary>
@@ -315,6 +388,12 @@ namespace DmxControlUtilities.Lib.Services.Hal
         /// Does nothing when the device has no hardware strobe (virtual strobe out of scope).
         /// </summary>
         public void SetStrobe(Device pDevice, double pValue)
+        {
+            SetStrobeCore(pDevice, pValue);
+            Apply(pDevice);
+        }
+
+        private void SetStrobeCore(Device pDevice, double pValue)
         {
             var description = GetDescription(pDevice);
             var strobe = description.GetFunction(DdfChannelKey.Function(FunctionChannel.Strobe))
@@ -357,8 +436,8 @@ namespace DmxControlUtilities.Lib.Services.Hal
             }
 
             // Ground state: color white, position center, ptspeed 100%.
-            SetColor(pDevice, 255, 255, 255);
-            SetPosition(pDevice, 0.5, 0.5);
+            SetColorCore(pDevice, 255, 255, 255);
+            SetPositionCore(pDevice, 0.5, 0.5);
 
             var ptSpeed = description.GetFunction(DdfChannelKey.Function(FunctionChannel.Ptspeed));
 
@@ -366,7 +445,11 @@ namespace DmxControlUtilities.Lib.Services.Hal
                 pDevice.SetValue(ptSpeed.Key, 255);
 
             if (description.GetFunction(DdfChannelKey.Function(FunctionChannel.Colortemp)) != null)
+            {
                 SetColorTemperature(pDevice, mDefaultColorTempKelvin);
+            }
+
+            Apply(pDevice);
         }
 
         #endregion
@@ -378,6 +461,26 @@ namespace DmxControlUtilities.Lib.Services.Hal
         /// derived from the coarse value by the typed setters).
         /// </summary>
         public void SetValue(Device pDevice, string pKey, byte pValue)
+        {
+            SetValueCore(pDevice, pKey, pValue);
+            Apply(pDevice);
+        }
+
+        /// <summary>
+        /// Sets multiple channel values (dispatching each through <see cref="SetValue"/>) and
+        /// applies the device to the DMX universe once at the end.
+        /// </summary>
+        public void SetValues(Device pDevice, IEnumerable<KeyValuePair<string, byte>> pValues)
+        {
+            foreach (var pair in pValues)
+            {
+                SetValueCore(pDevice, pair.Key, pair.Value);
+            }
+
+            Apply(pDevice);
+        }
+
+        private void SetValueCore(Device pDevice, string pKey, byte pValue)
         {
             if (!DdfChannelKey.TryParse(pKey, out var parsed))
             {
@@ -402,7 +505,7 @@ namespace DmxControlUtilities.Lib.Services.Hal
                         return;
                 }
 
-                SetColor(pDevice, r, g, b);
+                SetColorCore(pDevice, r, g, b);
                 return;
             }
 
@@ -419,7 +522,7 @@ namespace DmxControlUtilities.Lib.Services.Hal
                 }
 
                 var (rr, gg, bb) = HalColor.CmyToRgb(c, m, y);
-                SetColor(pDevice, ToByte(rr), ToByte(gg), ToByte(bb));
+                SetColorCore(pDevice, ToByte(rr), ToByte(gg), ToByte(bb));
                 return;
             }
 
@@ -436,7 +539,7 @@ namespace DmxControlUtilities.Lib.Services.Hal
                 }
 
                 var (rr, gg, bb) = HalColor.HsvToRgb(h, s, v);
-                SetColor(pDevice, ToByte(rr), ToByte(gg), ToByte(bb));
+                SetColorCore(pDevice, ToByte(rr), ToByte(gg), ToByte(bb));
                 return;
             }
 
@@ -445,9 +548,9 @@ namespace DmxControlUtilities.Lib.Services.Hal
                 var (pan, tilt) = GetPosition(pDevice);
 
                 if (parsed.Position.Value == PositionAxis.Pan)
-                    SetPosition(pDevice, normalized, tilt);
+                    SetPositionCore(pDevice, normalized, tilt);
                 else
-                    SetPosition(pDevice, pan, normalized);
+                    SetPositionCore(pDevice, pan, normalized);
 
                 return;
             }
@@ -457,11 +560,11 @@ namespace DmxControlUtilities.Lib.Services.Hal
                 switch (parsed.Function.Value)
                 {
                     case FunctionChannel.Dimmer:
-                        SetDimmer(pDevice, normalized);
+                        SetDimmerCore(pDevice, normalized);
                         return;
 
                     case FunctionChannel.Strobe:
-                        SetStrobe(pDevice, normalized);
+                        SetStrobeCore(pDevice, normalized);
                         return;
 
                     default:
@@ -514,44 +617,28 @@ namespace DmxControlUtilities.Lib.Services.Hal
 
                 switch (type)
                 {
-                    case FeatureType.Rgb:
-                        AddColorChannelFeatures(features, pDevice, ColorChannel.Red, ColorChannel.Green, ColorChannel.Blue);
+                    case DdfFunctionType.Rgb:
+                        features.Add(new ColorFeature(this, pDevice));
                         break;
 
-                    case FeatureType.Position:
-                        foreach (var axis in coarse)
-                        {
-                            if (DdfChannelKey.TryParse(axis.Key, out var parsed) && parsed.Position != null)
-                                features.Add(new PositionFeature(this, pDevice, parsed.Position.Value));
-                        }
+                    case DdfFunctionType.Position:
+                        features.Add(new PositionFeature(this, pDevice));
                         break;
 
-                    case FeatureType.Dimmer:
+                    case DdfFunctionType.Dimmer:
                         features.Add(new DimmerFeature(this, pDevice));
                         break;
 
-                    case FeatureType.Strobe:
+                    case DdfFunctionType.Strobe:
                         features.Add(new StrobeFeature(this, pDevice));
                         break;
 
                     default:
-                        // Generic continuous/stepped feature edited raw per coarse channel.
-                        foreach (var function in coarse)
-                            features.Add(new RawFeature(pDevice, function));
                         break;
                 }
             }
 
             return features;
-        }
-
-        private void AddColorChannelFeatures(List<HalFeature> pFeatures, Device pDevice, params ColorChannel[] pChannels)
-        {
-            foreach (var channel in pChannels)
-            {
-                if (GetDescription(pDevice)?.GetFunction(DdfChannelKey.Rgb(channel)) != null)
-                    pFeatures.Add(new ColorChannelFeature(this, pDevice, channel));
-            }
         }
 
         private static bool IsCoarseFunction(DdfFunction pFunction)
@@ -564,97 +651,94 @@ namespace DmxControlUtilities.Lib.Services.Hal
 
         private static double FromByte(byte pValue) => pValue / 255.0;
 
-        private static IReadOnlyList<HalFeatureStep> ToSteps(DdfFunction pFunction)
+        /// <summary>
+        /// A single color feature. Internally converts the requested RGB value to the device's
+        /// color mixing system (rgb/cmy/hsv/colorwheel) via <see cref="HalService.SetColor"/>.
+        /// </summary>
+        public sealed class ColorFeature : HalFeature
         {
-            return pFunction.Steps
-                .Select(s => new HalFeatureStep(s.MinDmx / 255.0, s.MaxDmx / 255.0, s.Caption))
-                .ToList();
-        }
-
-        private sealed class ColorChannelFeature : HalFeature
-        {
-            private readonly HalService mHal;
-            private readonly Device mDevice;
-            private readonly ColorChannel mChannel;
-
-            public ColorChannelFeature(HalService pHal, Device pDevice, ColorChannel pChannel)
-                : base(FeatureType.Rgb, pChannel.ToString())
+            public ColorFeature(HalService pHal, Device pDevice)
+                : base(pHal, pDevice, FeatureType.Color, "Color")
             {
-                mHal = pHal;
-                mDevice = pDevice;
-                mChannel = pChannel;
             }
 
+            /// <summary>
+            /// The current color as RGB (0..255 each).
+            /// </summary>
+            public (byte R, byte G, byte B) GetColor() => mHal.GetColor(mDevice);
+
+            /// <summary>
+            /// Sets the color as RGB (0..255 each), converting to the device's color mixing system.
+            /// </summary>
+            public void SetColor(byte pR, byte pG, byte pB) => mHal.SetColor(mDevice, pR, pG, pB);
+
+            /// <summary>
+            /// Normalized brightness (max rgb channel) for the generic feature contract.
+            /// </summary>
             public override double GetValue()
             {
-                var (r, g, b) = mHal.GetColor(mDevice);
-                return mChannel switch
-                {
-                    ColorChannel.Red => FromByte(r),
-                    ColorChannel.Green => FromByte(g),
-                    ColorChannel.Blue => FromByte(b),
-                    _ => 0,
-                };
+                var (r, g, b) = GetColor();
+                return Math.Max(r, Math.Max(g, b)) / 255.0;
             }
 
             public override void SetValue(double pValue)
             {
-                var (r, g, b) = mHal.GetColor(mDevice);
-                byte v = ToByte(Math.Clamp(pValue, 0, 1));
+                var (r, g, b) = GetColor();
+                double brightness = Math.Max(r, Math.Max(g, b)) / 255.0;
 
-                switch (mChannel)
+                if (brightness <= 0)
                 {
-                    case ColorChannel.Red: r = v; break;
-                    case ColorChannel.Green: g = v; break;
-                    case ColorChannel.Blue: b = v; break;
+                    byte v = ToByte(Math.Clamp(pValue, 0, 1));
+                    SetColor(v, v, v);
+                    return;
                 }
 
-                mHal.SetColor(mDevice, r, g, b);
+                double scale = Math.Clamp(pValue, 0, 1) / brightness;
+                SetColor(ToByte(r / 255.0 * scale), ToByte(g / 255.0 * scale), ToByte(b / 255.0 * scale));
             }
         }
 
-        private sealed class PositionFeature : HalFeature
+        /// <summary>
+        /// A single position feature exposing both axes (pan/tilt). Internally distributes
+        /// each 0..1 axis onto its coarse+fine DDF channels via <see cref="HalService.SetPosition"/>.
+        /// </summary>
+        public sealed class PositionFeature : HalFeature
         {
-            private readonly HalService mHal;
-            private readonly Device mDevice;
-            private readonly PositionAxis mAxis;
-
-            public PositionFeature(HalService pHal, Device pDevice, PositionAxis pAxis)
-                : base(FeatureType.Position, pAxis.ToString())
+            public PositionFeature(HalService pHal, Device pDevice)
+                : base(pHal, pDevice, FeatureType.Position, "Position")
             {
-                mHal = pHal;
-                mDevice = pDevice;
-                mAxis = pAxis;
             }
 
-            public override double GetValue()
-            {
-                var pos = mHal.GetPosition(mDevice);
-                return mAxis == PositionAxis.Pan ? pos.Pan : pos.Tilt;
-            }
+            /// <summary>
+            /// The combined pan/tilt position, each 0..1 (combined coarse+fine).
+            /// </summary>
+            public (double Pan, double Tilt) GetPosition() => mHal.GetPosition(mDevice);
 
+            /// <summary>
+            /// Sets pan/tilt together (0..1 each), distributing onto coarse+fine channels.
+            /// </summary>
+            public void SetPosition(double pPan, double pTilt) => mHal.SetPosition(mDevice, pPan, pTilt);
+
+            /// <summary>
+            /// Pan (x) axis for the generic feature contract.
+            /// </summary>
+            public override double GetValue() => GetPosition().Pan;
+
+            /// <summary>
+            /// Sets the pan (x) axis, keeping the current tilt.
+            /// </summary>
             public override void SetValue(double pValue)
             {
-                var pos = mHal.GetPosition(mDevice);
-                pValue = Math.Clamp(pValue, 0, 1);
-
-                if (mAxis == PositionAxis.Pan)
-                    mHal.SetPosition(mDevice, pValue, pos.Tilt);
-                else
-                    mHal.SetPosition(mDevice, pos.Pan, pValue);
+                var pos = GetPosition();
+                SetPosition(Math.Clamp(pValue, 0, 1), pos.Tilt);
             }
         }
 
         private sealed class DimmerFeature : HalFeature
         {
-            private readonly HalService mHal;
-            private readonly Device mDevice;
-
             public DimmerFeature(HalService pHal, Device pDevice)
-                : base(FeatureType.Dimmer, "Dimmer")
+                : base(pHal, pDevice, FeatureType.Dimmer, "Dimmer")
             {
-                mHal = pHal;
-                mDevice = pDevice;
             }
 
             public override double GetValue() => mHal.GetDimmer(mDevice);
@@ -664,14 +748,10 @@ namespace DmxControlUtilities.Lib.Services.Hal
 
         private sealed class StrobeFeature : HalFeature
         {
-            private readonly HalService mHal;
-            private readonly Device mDevice;
-
             public StrobeFeature(HalService pHal, Device pDevice)
-                : base(FeatureType.Strobe, "Strobe")
+                : base(pHal, pDevice, FeatureType.Strobe, "Strobe")
             {
-                mHal = pHal;
-                mDevice = pDevice;
+
             }
 
             public override double GetValue() => FromByte(mDevice.GetValue(DdfChannelKey.Function(FunctionChannel.Strobe)));
@@ -679,29 +759,7 @@ namespace DmxControlUtilities.Lib.Services.Hal
             public override void SetValue(double pValue) => mHal.SetStrobe(mDevice, pValue);
         }
 
-        private sealed class RawFeature : HalFeature
-        {
-            private readonly Device mDevice;
-            private readonly DdfFunction mFunction;
-            private readonly IReadOnlyList<HalFeatureStep> mSteps;
 
-            public RawFeature(Device pDevice, DdfFunction pFunction)
-                : base(pFunction.FunctionType, pFunction.Name)
-            {
-                mDevice = pDevice;
-                mFunction = pFunction;
-                mSteps = ToSteps(pFunction);
-            }
-
-            public override IReadOnlyList<HalFeatureStep> Steps => mSteps;
-
-            public override double GetValue() => FromByte(mDevice.GetValue(mFunction.Key));
-
-            public override void SetValue(double pValue)
-            {
-                mDevice.SetValue(mFunction.Key, ToByte(Math.Clamp(pValue, 0, 1)));
-            }
-        }
 
         #endregion
     }

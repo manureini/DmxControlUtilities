@@ -40,38 +40,14 @@ else
             <div class="card-body">
                 <h5 class="card-title">Control</h5>
 
-                <div class="mb-2" style="display: flex; gap: 1rem; align-items: center; flex-wrap: wrap;">
-                    <div>
-                        <label class="form-label mb-1">Color</label>
-                        <input type="color" class="form-control form-control-color" value="@GetColorHex()" @onchange="OnColorChanged" @oninput="OnColorChanged" />
-                    </div>
-
-                    <button class="btn btn-outline-secondary btn-sm mt-4" @onclick="OnResetDefaults">Reset to defaults</button>
-                </div>
-
-                @if (SupportsDimmer())
+                @foreach (var feature in GetFeatures())
                 {
-                    <label class="form-label">Dimmer: @((int)(HalService.GetDimmer(mDevice) * 100))%</label>
-                    <input type="range" min="0" max="100" step="1" class="form-range" value="@((int)(HalService.GetDimmer(mDevice) * 100))" @oninput="OnDimmerChanged" />
+                    <FeatureEditor Feature="feature" />
                 }
 
-                @if (SupportsPosition())
-                {
-                    var pos = HalService.GetPosition(mDevice);
-
-                    <label class="form-label">Pan: @((int)(pos.Pan * 100))%</label>
-                    <input type="range" min="0" max="100" step="1" class="form-range" value="@((int)(pos.Pan * 100))" @oninput="OnPanChanged" />
-
-                    <label class="form-label">Tilt: @((int)(pos.Tilt * 100))%</label>
-                    <input type="range" min="0" max="100" step="1" class="form-range" value="@((int)(pos.Tilt * 100))" @oninput="OnTiltChanged" />
-                }
+                <button class="btn btn-outline-secondary btn-sm" @onclick="OnResetDefaults">Reset to defaults</button>
             </div>
         </div>
-
-        @foreach (var feature in GetFeatures())
-        {
-            <DeviceFeatureEditor Feature="feature" OnValueChanged="OnFunctionValueChanged" />
-        }
     }
 
     <button class="btn btn-secondary" @onclick="Back">Back</button>
@@ -93,17 +69,14 @@ else
     }
 
     /// <summary>
-    /// Returns the device's logical features not already covered by the dedicated
-    /// color/dimmer/position controls above.
+    /// Returns the device's logical features.
     /// </summary>
     protected IEnumerable<HalFeature> GetFeatures()
     {
         if (mDevice == null)
             return Enumerable.Empty<HalFeature>();
 
-        var covered = new[] { FeatureType.Rgb, FeatureType.Dimmer, FeatureType.Position };
-
-        return HalService.GetFeatures(mDevice).Where(f => !covered.Contains(f.Type));
+        return HalService.GetFeatures(mDevice);
     }
 
     protected void OnChannelChanged(ChangeEventArgs pArgs)
@@ -120,86 +93,7 @@ else
         }
     }
 
-    protected void OnFunctionValueChanged()
-    {
-        if (mDevice == null)
-            return;
-
-        DeviceService.ApplyDevice(mDevice);
-    }
-
     #region HAL control
-
-    protected bool SupportsDimmer()
-    {
-        return mDescription != null && (mDescription.HasDimmer || mDescription.HasRgb);
-    }
-
-    protected bool SupportsPosition()
-    {
-        return mDevice != null && HalService.GetFeatures(mDevice).Any(f => f.Type == FeatureType.Position);
-    }
-
-    protected string GetColorHex()
-    {
-        if (mDevice == null)
-            return "#000000";
-
-        var (r, g, b) = HalService.GetColor(mDevice);
-        return $"#{r:x2}{g:x2}{b:x2}";
-    }
-
-    protected void OnColorChanged(ChangeEventArgs pArgs)
-    {
-        if (mDevice == null)
-            return;
-
-        var color = HalColor.FromHex(pArgs.Value?.ToString());
-
-        if (color == null)
-            return;
-
-        HalService.SetColor(mDevice, color.Value.R, color.Value.G, color.Value.B);
-        DeviceService.ApplyDevice(mDevice);
-    }
-
-    protected void OnDimmerChanged(ChangeEventArgs pArgs)
-    {
-        if (mDevice == null)
-            return;
-
-        if (double.TryParse(pArgs.Value?.ToString(), out double value))
-        {
-            HalService.SetDimmer(mDevice, value / 100.0);
-            DeviceService.ApplyDevice(mDevice);
-        }
-    }
-
-    protected void OnPanChanged(ChangeEventArgs pArgs)
-    {
-        if (mDevice == null)
-            return;
-
-        if (double.TryParse(pArgs.Value?.ToString(), out double value))
-        {
-            var pos = HalService.GetPosition(mDevice);
-            HalService.SetPosition(mDevice, value / 100.0, pos.Tilt);
-            DeviceService.ApplyDevice(mDevice);
-        }
-    }
-
-    protected void OnTiltChanged(ChangeEventArgs pArgs)
-    {
-        if (mDevice == null)
-            return;
-
-        if (double.TryParse(pArgs.Value?.ToString(), out double value))
-        {
-            var pos = HalService.GetPosition(mDevice);
-            HalService.SetPosition(mDevice, pos.Pan, value / 100.0);
-            DeviceService.ApplyDevice(mDevice);
-        }
-    }
 
     protected void OnResetDefaults()
     {
@@ -207,7 +101,6 @@ else
             return;
 
         HalService.ResetToDefaults(mDevice);
-        DeviceService.ApplyDevice(mDevice);
     }
 
     #endregion

@@ -39,6 +39,52 @@ namespace DmxControlUtilities.Tests
         }
 
         [TestMethod]
+        public void SetColor_AddWhite_KeepsRgbAndAddsWhite()
+        {
+            var hal = CreateHal(@"<device whitechanneldefaultmode='addwhite'><functions><rgb><red dmxchannel='0'/><green dmxchannel='1'/><blue dmxchannel='2'/><white dmxchannel='3'/></rgb></functions></device>", out var device);
+
+            hal.SetColor(device, 255, 255, 255);
+
+            Assert.AreEqual((byte)255, device.GetValue("rgb/red"));
+            Assert.AreEqual((byte)255, device.GetValue("rgb/white"));
+        }
+
+        [TestMethod]
+        public void SetColor_OnlyWhite_SubtractsWhiteFromRgb()
+        {
+            var hal = CreateHal(@"<device whitechanneldefaultmode='onlywhite'><functions><rgb><red dmxchannel='0'/><green dmxchannel='1'/><blue dmxchannel='2'/><white dmxchannel='3'/></rgb></functions></device>", out var device);
+
+            hal.SetColor(device, 255, 255, 255);
+
+            Assert.AreEqual((byte)0, device.GetValue("rgb/red"));
+            Assert.AreEqual((byte)255, device.GetValue("rgb/white"));
+        }
+
+        [TestMethod]
+        public void SetColor_NoWhiteMode_LeavesWhiteOff()
+        {
+            var hal = CreateHal(@"<device><functions><rgb><red dmxchannel='0'/><green dmxchannel='1'/><blue dmxchannel='2'/><white dmxchannel='3'/></rgb></functions></device>", out var device);
+
+            hal.SetColor(device, 255, 255, 255);
+
+            Assert.AreEqual((byte)0, device.GetValue("rgb/white"));
+        }
+
+        [TestMethod]
+        public void SetColor_AddAmber_DrivesAmberNearYellow()
+        {
+            var hal = CreateHal(@"<device amberchanneldefaultmode='add'><functions><rgb><red dmxchannel='0'/><green dmxchannel='1'/><blue dmxchannel='2'/><amber dmxchannel='3'/></rgb></functions></device>", out var device);
+
+            hal.SetColor(device, 255, 128, 0); // orange-ish, hue ~30 -> within amber trapezoid
+
+            Assert.IsTrue(device.GetValue("rgb/amber") > 0);
+
+            hal.SetColor(device, 0, 0, 255); // blue, hue 240 -> outside amber trapezoid
+
+            Assert.AreEqual((byte)0, device.GetValue("rgb/amber"));
+        }
+
+        [TestMethod]
         public void SetColor_Cmy_ConvertsSubtractive()
         {
             var hal = CreateHal(@"<device><functions><cmy><cyan dmxchannel='0'/><magenta dmxchannel='1'/><yellow dmxchannel='2'/></cmy></functions></device>", out var device);

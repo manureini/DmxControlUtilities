@@ -165,12 +165,7 @@ namespace DmxControlUtilities.Lib.Services
             if (device == null)
                 return;
 
-            foreach (var pair in pEvent.Values)
-            {
-                mHalService.SetValue(device, pair.Key, pair.Value);
-            }
-
-            mDeviceService.ApplyDevice(device);
+            mHalService.SetValues(device, pEvent.Values);
         }
     }
 }

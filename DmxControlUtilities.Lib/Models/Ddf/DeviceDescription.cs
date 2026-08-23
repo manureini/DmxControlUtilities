@@ -32,6 +32,20 @@ namespace DmxControlUtilities.Lib.Models.Ddf
         public int ChannelCount { get; set; }
 
         /// <summary>
+        /// Default behavior of the white channel when only RGB is set (whitechanneldefaultmode
+        /// attribute, e.g. "addwhite", "none"). Empty when not declared. Stored verbatim; the HAL
+        /// interprets it.
+        /// </summary>
+        public string WhiteChannelDefaultMode { get; set; } = string.Empty;
+
+        /// <summary>
+        /// Default behavior of the amber channel when only RGB is set (amberchanneldefaultmode
+        /// attribute, e.g. "add", "none"). Empty when not declared. Stored verbatim; the HAL
+        /// interprets it.
+        /// </summary>
+        public string AmberChannelDefaultMode { get; set; } = string.Empty;
+
+        /// <summary>
         /// All editable function channels of this device, ordered by DMX channel.
         /// </summary>
         public List<DdfFunction> Functions { get; set; } = new();
@@ -59,7 +73,7 @@ namespace DmxControlUtilities.Lib.Models.Ddf
         /// <summary>
         /// Returns all functions of the given type (e.g. dimmer, colorwheel).
         /// </summary>
-        public IEnumerable<DdfFunction> GetFunctionsByType(FeatureType pFunctionType)
+        public IEnumerable<DdfFunction> GetFunctionsByType(DdfFunctionType pFunctionType)
         {
             return Functions.Where(f => f.FunctionType == pFunctionType);
         }

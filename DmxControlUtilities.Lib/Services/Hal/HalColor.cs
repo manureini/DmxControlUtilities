@@ -78,6 +78,31 @@ namespace DmxControlUtilities.Lib.Services.Hal
         }
 
         /// <summary>
+        /// Trapezoid intensity of an additional LED color (amber, indigo, ...) over the hue
+        /// spectrum, per the DDF hueLeftBottom/hueLeftTop/hueRightTop/hueRightBottom attributes.
+        /// Returns 0..1 (scaled by maxIntensity). h is in degrees 0..360.
+        /// </summary>
+        public static double TrapezoidIntensity(double h, double hueLeftBottom, double hueLeftTop, double hueRightTop, double hueRightBottom, double maxIntensity = 1.0)
+        {
+            // Normalize into the [hueLeftBottom, hueRightBottom] window, wrapping around 360.
+            h = (h % 360 + 360) % 360;
+
+            if (h <= hueLeftBottom || h >= hueRightBottom)
+                return 0;
+
+            double value;
+
+            if (h < hueLeftTop)
+                value = (h - hueLeftBottom) / (hueLeftTop - hueLeftBottom);
+            else if (h <= hueRightTop)
+                value = 1.0;
+            else
+                value = (hueRightBottom - h) / (hueRightBottom - hueRightTop);
+
+            return Math.Clamp(value, 0, 1) * Math.Clamp(maxIntensity, 0, 1);
+        }
+
+        /// <summary>
         /// Parses a "#rrggbb" hex string to RGB bytes. Returns null when invalid.
         /// </summary>
         public static (byte R, byte G, byte B)? FromHex(string? pHex)

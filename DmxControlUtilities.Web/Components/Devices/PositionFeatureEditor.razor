@@ -1,0 +1,68 @@
+@using DmxControlUtilities.Lib.Services.Hal
+
+<div class="mb-2">
+    <label class="form-label">Position: @Percent(pos.Pan)% / @Percent(pos.Tilt)%</label>
+
+    <div class="m-position-pad" tabindex="0"
+         @onpointerdown="OnPointerDown" @onpointermove="OnPointerMove" @onpointerup="OnPointerUp"
+         style="@PadStyle">
+        <div class="m-position-cursor" style="@CursorStyle"></div>
+    </div>
+</div>
+
+@code {
+
+    [Parameter]
+    public HalService.PositionFeature Feature { get; set; } = null!;
+
+    [Parameter]
+    public EventCallback OnValueChanged { get; set; }
+
+    private const int PadSize = 200;
+
+    private (double Pan, double Tilt) pos => Feature.GetPosition();
+
+    private bool mDragging;
+
+    private string PadStyle => $"position: relative; width: {PadSize}px; height: {PadSize}px; touch-action: none;";
+
+    private string CursorStyle
+    {
+        get
+        {
+            // Pan -> x (0..1), Tilt -> y (0..1). y is inverted so 1 is at the top.
+            double x = pos.Pan * PadSize;
+            double y = (1.0 - pos.Tilt) * PadSize;
+            return $"left: {x:0.#}px; top: {y:0.#}px;";
+        }
+    }
+
+    private static string Percent(double pValue) => ((int)Math.Round(pValue * 100)).ToString();
+
+    private void OnPointerDown(PointerEventArgs pArgs)
+    {
+        mDragging = true;
+        UpdateFromPointer(pArgs);
+    }
+
+    private void OnPointerMove(PointerEventArgs pArgs)
+    {
+        if (mDragging)
+            UpdateFromPointer(pArgs);
+    }
+
+    private void OnPointerUp(PointerEventArgs pArgs)
+    {
+        mDragging = false;
+    }
+
+    private void UpdateFromPointer(PointerEventArgs pArgs)
+    {
+        // offsetX/offsetY are relative to the padding edge of the pad.
+        double pan = Math.Clamp(pArgs.OffsetX / PadSize, 0, 1);
+        double tilt = Math.Clamp(1.0 - pArgs.OffsetY / PadSize, 0, 1);
+
+        Feature.SetPosition(pan, tilt);
+        OnValueChanged.InvokeAsync();
+    }
+}

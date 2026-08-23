@@ -4,7 +4,7 @@ namespace DmxControlUtilities.Lib.Models.Ddf
     /// The type of a device function, derived from the DDF element it originates from.
     /// Custom/unknown elements are mapped to <see cref="Raw"/>.
     /// </summary>
-    public enum FeatureType
+    public enum DdfFunctionType
     {
         // Color mixing
         Rgb,

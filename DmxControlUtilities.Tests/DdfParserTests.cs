@@ -28,6 +28,30 @@ namespace DmxControlUtilities.Tests
         }
 
         [TestMethod]
+        public void ParsesChannelDefaultModes()
+        {
+            var d = Parse(@"
+                <device whitechanneldefaultmode='addwhite' amberchanneldefaultmode='add'>
+                    <functions><dimmer dmxchannel='0'/></functions>
+                </device>");
+
+            Assert.AreEqual("addwhite", d.WhiteChannelDefaultMode);
+            Assert.AreEqual("add", d.AmberChannelDefaultMode);
+        }
+
+        [TestMethod]
+        public void ChannelDefaultModesDefaultToEmpty()
+        {
+            var d = Parse(@"
+                <device>
+                    <functions><dimmer dmxchannel='0'/></functions>
+                </device>");
+
+            Assert.AreEqual(string.Empty, d.WhiteChannelDefaultMode);
+            Assert.AreEqual(string.Empty, d.AmberChannelDefaultMode);
+        }
+
+        [TestMethod]
         public void ParsesRgbColorChannels()
         {
             var d = Parse(@"
