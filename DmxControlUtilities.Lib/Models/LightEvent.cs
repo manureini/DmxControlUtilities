@@ -1,3 +1,5 @@
+using DmxControlUtilities.Lib.Models.Ddf;
+
 namespace DmxControlUtilities.Lib.Models
 {
     /// <summary>
@@ -24,16 +26,20 @@ namespace DmxControlUtilities.Lib.Models
         {
             get
             {
-                bool hasColor = Values.ContainsKey("rgb/red")
-                    || Values.ContainsKey("rgb/green")
-                    || Values.ContainsKey("rgb/blue");
+                string redKey = DdfChannelKey.Rgb(ColorChannel.Red);
+                string greenKey = DdfChannelKey.Rgb(ColorChannel.Green);
+                string blueKey = DdfChannelKey.Rgb(ColorChannel.Blue);
+
+                bool hasColor = Values.ContainsKey(redKey)
+                    || Values.ContainsKey(greenKey)
+                    || Values.ContainsKey(blueKey);
 
                 if (!hasColor)
                     return "#808080";
 
-                byte r = Values.TryGetValue("rgb/red", out byte red) ? red : (byte)0;
-                byte g = Values.TryGetValue("rgb/green", out byte green) ? green : (byte)0;
-                byte b = Values.TryGetValue("rgb/blue", out byte blue) ? blue : (byte)0;
+                byte r = Values.TryGetValue(redKey, out byte red) ? red : (byte)0;
+                byte g = Values.TryGetValue(greenKey, out byte green) ? green : (byte)0;
+                byte b = Values.TryGetValue(blueKey, out byte blue) ? blue : (byte)0;
 
                 return $"#{r:x2}{g:x2}{b:x2}";
             }
@@ -47,9 +53,9 @@ namespace DmxControlUtilities.Lib.Models
                 if (hex.Length != 6)
                     return;
 
-                Values["rgb/red"] = Convert.ToByte(hex.Substring(0, 2), 16);
-                Values["rgb/green"] = Convert.ToByte(hex.Substring(2, 2), 16);
-                Values["rgb/blue"] = Convert.ToByte(hex.Substring(4, 2), 16);
+                Values[DdfChannelKey.Rgb(ColorChannel.Red)] = Convert.ToByte(hex.Substring(0, 2), 16);
+                Values[DdfChannelKey.Rgb(ColorChannel.Green)] = Convert.ToByte(hex.Substring(2, 2), 16);
+                Values[DdfChannelKey.Rgb(ColorChannel.Blue)] = Convert.ToByte(hex.Substring(4, 2), 16);
             }
         }
     }

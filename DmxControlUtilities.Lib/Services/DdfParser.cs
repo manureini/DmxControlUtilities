@@ -191,7 +191,7 @@ namespace DmxControlUtilities.Lib.Services
                     continue;
 
                 AddFunction(pDescription, $"{prefix}/{colorName}", CultureInfo.InvariantCulture.TextInfo.ToTitleCase(colorName),
-                    dmxChannel.Value, GetByteAttribute(channel, "defaultval"), channel);
+                    dmxChannel.Value, GetByteAttribute(channel, "defaultval"), channel, DdfFunctionType.Rgb);
             }
         }
 
@@ -201,6 +201,7 @@ namespace DmxControlUtilities.Lib.Services
         private static void ParseAliasedContainer(XElement pContainer, DeviceDescription pDescription, IReadOnlyDictionary<string, string> pAliases)
         {
             string containerName = pContainer.Name.LocalName.ToLowerInvariant();
+            var type = GetFunctionType(containerName);
 
             foreach (var channel in pContainer.Elements())
             {
@@ -213,7 +214,7 @@ namespace DmxControlUtilities.Lib.Services
                     continue;
 
                 AddFunction(pDescription, $"{containerName}/{channelName}", CultureInfo.InvariantCulture.TextInfo.ToTitleCase(channelName),
-                    dmxChannel.Value, GetByteAttribute(channel, "defaultval"), channel);
+                    dmxChannel.Value, GetByteAttribute(channel, "defaultval"), channel, type);
             }
         }
 
@@ -250,7 +251,7 @@ namespace DmxControlUtilities.Lib.Services
                     for (int color = 0; color < ordered.Length; color++)
                     {
                         AddFunction(pDescription, $"radix/{pixelIndex}/{ordered[color]}", $"Pixel {pixelIndex + 1} {ordered[color]}",
-                            channel, 0, pRadix);
+                            channel, 0, pRadix, DdfFunctionType.Radix);
 
                         channel++;
                     }
@@ -287,6 +288,7 @@ namespace DmxControlUtilities.Lib.Services
         private static void ParseChannelContainer(XElement pContainer, DeviceDescription pDescription)
         {
             string containerName = pContainer.Name.LocalName.ToLowerInvariant();
+            var type = GetFunctionType(containerName);
 
             foreach (var channel in pContainer.Elements())
             {
@@ -299,7 +301,7 @@ namespace DmxControlUtilities.Lib.Services
                 string displayName = CultureInfo.InvariantCulture.TextInfo.ToTitleCase(channelName.ToLowerInvariant());
 
                 AddFunction(pDescription, $"{containerName}/{channelName.ToLowerInvariant()}", displayName,
-                    dmxChannel.Value, GetByteAttribute(channel, "defaultval"), channel);
+                    dmxChannel.Value, GetByteAttribute(channel, "defaultval"), channel, type);
             }
         }
 
@@ -324,7 +326,7 @@ namespace DmxControlUtilities.Lib.Services
                             continue;
 
                         AddFunction(pDescription, $"matrix/{index}/{channel.Name.LocalName.ToLowerInvariant()}",
-                            $"Pixel {index + 1} {channel.Name.LocalName}", dmxChannel.Value, GetByteAttribute(channel, "defaultval"), channel);
+                            $"Pixel {index + 1} {channel.Name.LocalName}", dmxChannel.Value, GetByteAttribute(channel, "defaultval"), channel, DdfFunctionType.Matrix);
                     }
 
                     index++;
@@ -349,7 +351,7 @@ namespace DmxControlUtilities.Lib.Services
                 for (int pixel = 0; pixel < pixels; pixel++)
                 {
                     AddFunction(pDescription, $"matrix/{pixel}/intensity", $"Pixel {pixel + 1}",
-                        startChannel + pixel, 0, pMatrix);
+                        startChannel + pixel, 0, pMatrix, DdfFunctionType.Matrix);
                 }
 
                 return;
@@ -374,18 +376,23 @@ namespace DmxControlUtilities.Lib.Services
                 for (int color = 0; color < channelsPerPixel; color++)
                 {
                     AddFunction(pDescription, $"matrix/{pixel}/{ordered[color]}", $"Pixel {pixel + 1} {ordered[color]}",
-                        startChannel + pixel * channelsPerPixel + color, 0, pMatrix);
+                        startChannel + pixel * channelsPerPixel + color, 0, pMatrix, DdfFunctionType.Matrix);
                 }
             }
         }
 
         private static void AddFunction(DeviceDescription pDescription, string pKey, string pName, int pDmxChannel, byte pDefault, XElement pElement)
         {
+            AddFunction(pDescription, pKey, pName, pDmxChannel, pDefault, pElement, GetFunctionType(pElement.Name.LocalName));
+        }
+
+        private static void AddFunction(DeviceDescription pDescription, string pKey, string pName, int pDmxChannel, byte pDefault, XElement pElement, DdfFunctionType pType)
+        {
             var function = new DdfFunction
             {
                 Key = pKey,
                 Name = pName,
-                FunctionType = pElement.Name.LocalName.ToLowerInvariant(),
+                FunctionType = pType,
                 DmxChannel = pDmxChannel,
                 DefaultValue = pDefault,
             };
@@ -419,12 +426,12 @@ namespace DmxControlUtilities.Lib.Services
             pDescription.Functions.Add(function);
 
             // Higher resolution channels: 16/24/32-bit via finedmxchannel, ultradmxchannel, ultrafinedmxchannel.
-            AddResolutionChannel(pDescription, pElement, pKey, pName, "finedmxchannel", "fine");
-            AddResolutionChannel(pDescription, pElement, pKey, pName, "ultradmxchannel", "ultra");
-            AddResolutionChannel(pDescription, pElement, pKey, pName, "ultrafinedmxchannel", "ultrafine");
+            AddResolutionChannel(pDescription, pElement, pKey, pName, pType, "finedmxchannel", "fine");
+            AddResolutionChannel(pDescription, pElement, pKey, pName, pType, "ultradmxchannel", "ultra");
+            AddResolutionChannel(pDescription, pElement, pKey, pName, pType, "ultrafinedmxchannel", "ultrafine");
         }
 
-        private static void AddResolutionChannel(DeviceDescription pDescription, XElement pElement, string pKey, string pName, string pAttribute, string pSuffix)
+        private static void AddResolutionChannel(DeviceDescription pDescription, XElement pElement, string pKey, string pName, DdfFunctionType pType, string pAttribute, string pSuffix)
         {
             int? channel = GetIntAttribute(pElement, pAttribute);
 
@@ -435,10 +442,46 @@ namespace DmxControlUtilities.Lib.Services
             {
                 Key = $"{pKey}/{pSuffix}",
                 Name = $"{pName} ({pSuffix})",
-                FunctionType = pElement.Name.LocalName.ToLowerInvariant(),
+                FunctionType = pType,
                 DmxChannel = channel.Value,
                 DefaultValue = 0,
             });
+        }
+
+        /// <summary>
+        /// Maps a DDF element name to its function type. Custom/unknown elements map to Raw.
+        /// </summary>
+        private static DdfFunctionType GetFunctionType(string pElementName)
+        {
+            return pElementName.ToLowerInvariant() switch
+            {
+                "rgb" => DdfFunctionType.Rgb,
+                "cmy" => DdfFunctionType.Cmy,
+                "hsv" => DdfFunctionType.Hsv,
+                "dimmer" => DdfFunctionType.Dimmer,
+                "shutter" => DdfFunctionType.Shutter,
+                "strobe" or "strobo" => DdfFunctionType.Strobe,
+                "switch" => DdfFunctionType.Switch,
+                "position" => DdfFunctionType.Position,
+                "colorwheel" => DdfFunctionType.Colorwheel,
+                "colortemp" => DdfFunctionType.Colortemp,
+                "gobowheel" => DdfFunctionType.Gobowheel,
+                "focus" => DdfFunctionType.Focus,
+                "frost" => DdfFunctionType.Frost,
+                "iris" => DdfFunctionType.Iris,
+                "zoom" => DdfFunctionType.Zoom,
+                "prism" => DdfFunctionType.Prism,
+                "rotation" => DdfFunctionType.Rotation,
+                "index" => DdfFunctionType.Index,
+                "matrix" => DdfFunctionType.Matrix,
+                "radix" => DdfFunctionType.Radix,
+                "raw" => DdfFunctionType.Raw,
+                "rawstep" => DdfFunctionType.Rawstep,
+                "const" => DdfFunctionType.Const,
+                "fog" => DdfFunctionType.Fog,
+                "fan" => DdfFunctionType.Fan,
+                _ => DdfFunctionType.Raw,
+            };
         }
 
         private static DdfRange ParseRange(XElement pElement)

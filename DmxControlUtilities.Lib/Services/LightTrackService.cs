@@ -1,4 +1,5 @@
 using DmxControlUtilities.Lib.Models;
+using DmxControlUtilities.Lib.Services.Hal;
 
 namespace DmxControlUtilities.Lib.Services
 {
@@ -8,14 +9,16 @@ namespace DmxControlUtilities.Lib.Services
     public class LightTrackService
     {
         private readonly DeviceService mDeviceService;
+        private readonly HalService mHalService;
         private readonly object mLock = new();
 
         private TimecodeShow? mShow;
         private TimeSpan mLastPosition = TimeSpan.MinValue;
 
-        public LightTrackService(DeviceService pDeviceService)
+        public LightTrackService(DeviceService pDeviceService, HalService pHalService)
         {
             mDeviceService = pDeviceService;
+            mHalService = pHalService;
         }
 
         public TimecodeShow? Show
@@ -164,7 +167,7 @@ namespace DmxControlUtilities.Lib.Services
 
             foreach (var pair in pEvent.Values)
             {
-                device.SetValue(pair.Key, pair.Value);
+                mHalService.SetValue(device, pair.Key, pair.Value);
             }
 
             mDeviceService.ApplyDevice(device);

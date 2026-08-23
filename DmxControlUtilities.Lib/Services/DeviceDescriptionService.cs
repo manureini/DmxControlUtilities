@@ -37,6 +37,15 @@ namespace DmxControlUtilities.Lib.Services
                 };
         }
 
+        /// <summary>
+        /// Creates a service backed by a fixed set of descriptions (e.g. for tests).
+        /// </summary>
+        public DeviceDescriptionService(params DeviceDescription[] pDescriptions)
+        {
+            mFolders = Array.Empty<string>();
+            mDescriptions = pDescriptions.ToList();
+        }
+
         public IReadOnlyList<string> Folders => mFolders;
 
         public string Folder => mFolders.FirstOrDefault() ?? string.Empty;

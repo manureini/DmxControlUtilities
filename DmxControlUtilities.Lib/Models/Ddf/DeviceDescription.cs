@@ -39,5 +39,39 @@ namespace DmxControlUtilities.Lib.Models.Ddf
         public string DisplayName => string.IsNullOrWhiteSpace(Vendor)
             ? $"{Model} ({Mode})"
             : $"{Vendor} {Model} ({Mode})";
+
+        /// <summary>
+        /// Returns the function with the given key, or null.
+        /// </summary>
+        public DdfFunction? GetFunction(string pKey)
+        {
+            return Functions.FirstOrDefault(f => f.Key.Equals(pKey, StringComparison.OrdinalIgnoreCase));
+        }
+
+        /// <summary>
+        /// Returns all functions whose key starts with the given prefix (e.g. "rgb/").
+        /// </summary>
+        public IEnumerable<DdfFunction> GetFunctionsByPrefix(string pPrefix)
+        {
+            return Functions.Where(f => f.Key.StartsWith(pPrefix, StringComparison.OrdinalIgnoreCase));
+        }
+
+        /// <summary>
+        /// Returns all functions of the given type (e.g. dimmer, colorwheel).
+        /// </summary>
+        public IEnumerable<DdfFunction> GetFunctionsByType(DdfFunctionType pFunctionType)
+        {
+            return Functions.Where(f => f.FunctionType == pFunctionType);
+        }
+
+        /// <summary>
+        /// True when the device has at least one rgb color channel.
+        /// </summary>
+        public bool HasRgb => Functions.Any(f => f.Key.StartsWith(DdfChannelKey.Rgb(ColorChannel.Red), StringComparison.OrdinalIgnoreCase));
+
+        /// <summary>
+        /// True when the device has a hardware dimmer channel.
+        /// </summary>
+        public bool HasDimmer => Functions.Any(f => f.Key.Equals(DdfChannelKey.Function(FunctionChannel.Dimmer), StringComparison.OrdinalIgnoreCase));
     }
 }

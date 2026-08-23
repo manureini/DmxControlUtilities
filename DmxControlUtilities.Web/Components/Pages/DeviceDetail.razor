@@ -3,9 +3,11 @@
 @using DmxControlUtilities.Lib.Models
 @using DmxControlUtilities.Lib.Models.Ddf
 @using DmxControlUtilities.Lib.Services
+@using DmxControlUtilities.Lib.Services.Hal
 @using DmxControlUtilities.Web.Components.Devices
 
 @inject DeviceService DeviceService
+@inject HalService HalService
 @inject NavigationManager NavigationManager
 
 <PageTitle>Device</PageTitle>
@@ -32,6 +34,38 @@ else
         <div class="mb-3">
             <label class="form-label">Channel (1 - @(513 - mDescription.ChannelCount))</label>
             <input type="number" min="1" max="@(513 - mDescription.ChannelCount)" class="form-control" value="@mDevice.Channel" @onchange="OnChannelChanged" />
+        </div>
+
+        <div class="card mb-3">
+            <div class="card-body">
+                <h5 class="card-title">Control</h5>
+
+                <div class="mb-2" style="display: flex; gap: 1rem; align-items: center; flex-wrap: wrap;">
+                    <div>
+                        <label class="form-label mb-1">Color</label>
+                        <input type="color" class="form-control form-control-color" value="@GetColorHex()" @onchange="OnColorChanged" />
+                    </div>
+
+                    <button class="btn btn-outline-secondary btn-sm mt-4" @onclick="OnResetDefaults">Reset to defaults</button>
+                </div>
+
+                @if (SupportsDimmer())
+                {
+                    <label class="form-label">Dimmer: @((int)(HalService.GetDimmer(mDevice) * 100))%</label>
+                    <input type="range" min="0" max="100" step="1" class="form-range" value="@((int)(HalService.GetDimmer(mDevice) * 100))" @oninput="OnDimmerChanged" />
+                }
+
+                @if (SupportsPosition())
+                {
+                    var pos = HalService.GetPosition(mDevice);
+
+                    <label class="form-label">Pan: @((int)(pos.Pan * 100))%</label>
+                    <input type="range" min="0" max="100" step="1" class="form-range" value="@((int)(pos.Pan * 100))" @oninput="OnPanChanged" />
+
+                    <label class="form-label">Tilt: @((int)(pos.Tilt * 100))%</label>
+                    <input type="range" min="0" max="100" step="1" class="form-range" value="@((int)(pos.Tilt * 100))" @oninput="OnTiltChanged" />
+                }
+            </div>
         </div>
 
         @foreach (var group in GetFunctionGroups())
@@ -95,6 +129,90 @@ else
 
         DeviceService.ApplyDevice(mDevice);
     }
+
+    #region HAL control
+
+    protected bool SupportsDimmer()
+    {
+        return mDescription != null && (mDescription.HasDimmer || mDescription.HasRgb);
+    }
+
+    protected bool SupportsPosition()
+    {
+        return mDescription != null && mDescription.GetFunction("position/pan") != null;
+    }
+
+    protected string GetColorHex()
+    {
+        if (mDevice == null)
+            return "#000000";
+
+        var (r, g, b) = HalService.GetColor(mDevice);
+        return $"#{r:x2}{g:x2}{b:x2}";
+    }
+
+    protected void OnColorChanged(ChangeEventArgs pArgs)
+    {
+        if (mDevice == null)
+            return;
+
+        var color = HalColor.FromHex(pArgs.Value?.ToString());
+
+        if (color == null)
+            return;
+
+        HalService.SetColor(mDevice, color.Value.R, color.Value.G, color.Value.B);
+        DeviceService.ApplyDevice(mDevice);
+    }
+
+    protected void OnDimmerChanged(ChangeEventArgs pArgs)
+    {
+        if (mDevice == null)
+            return;
+
+        if (double.TryParse(pArgs.Value?.ToString(), out double value))
+        {
+            HalService.SetDimmer(mDevice, value / 100.0);
+            DeviceService.ApplyDevice(mDevice);
+        }
+    }
+
+    protected void OnPanChanged(ChangeEventArgs pArgs)
+    {
+        if (mDevice == null)
+            return;
+
+        if (double.TryParse(pArgs.Value?.ToString(), out double value))
+        {
+            var pos = HalService.GetPosition(mDevice);
+            HalService.SetPosition(mDevice, value / 100.0, pos.Tilt);
+            DeviceService.ApplyDevice(mDevice);
+        }
+    }
+
+    protected void OnTiltChanged(ChangeEventArgs pArgs)
+    {
+        if (mDevice == null)
+            return;
+
+        if (double.TryParse(pArgs.Value?.ToString(), out double value))
+        {
+            var pos = HalService.GetPosition(mDevice);
+            HalService.SetPosition(mDevice, pos.Pan, value / 100.0);
+            DeviceService.ApplyDevice(mDevice);
+        }
+    }
+
+    protected void OnResetDefaults()
+    {
+        if (mDevice == null)
+            return;
+
+        HalService.ResetToDefaults(mDevice);
+        DeviceService.ApplyDevice(mDevice);
+    }
+
+    #endregion
 
     protected void Back()
     {

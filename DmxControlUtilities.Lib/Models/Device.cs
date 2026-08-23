@@ -43,7 +43,9 @@ namespace DmxControlUtilities.Lib.Models
         /// </summary>
         public (byte R, byte G, byte B) GetRgb()
         {
-            return (GetValue("rgb/red"), GetValue("rgb/green"), GetValue("rgb/blue"));
+            return (GetValue(DdfChannelKey.Rgb(ColorChannel.Red)),
+                GetValue(DdfChannelKey.Rgb(ColorChannel.Green)),
+                GetValue(DdfChannelKey.Rgb(ColorChannel.Blue)));
         }
     }
 }
