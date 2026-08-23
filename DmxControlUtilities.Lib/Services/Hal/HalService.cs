@@ -88,7 +88,7 @@ namespace DmxControlUtilities.Lib.Services.Hal
             // Color wheel: pick nearest fixed color.
             if (!handled)
             {
-                var wheel = description.GetFunctionsByType(DdfFunctionType.Colorwheel).FirstOrDefault();
+                var wheel = description.GetFunctionsByType(FeatureType.Colorwheel).FirstOrDefault();
 
                 if (wheel != null && wheel.Steps.Count > 0)
                 {
@@ -144,7 +144,7 @@ namespace DmxControlUtilities.Lib.Services.Hal
             }
 
             // Color wheel: read the hex of the active step.
-            var wheel = description.GetFunctionsByType(DdfFunctionType.Colorwheel).FirstOrDefault();
+            var wheel = description.GetFunctionsByType(FeatureType.Colorwheel).FirstOrDefault();
 
             if (wheel != null)
             {
@@ -486,5 +486,223 @@ namespace DmxControlUtilities.Lib.Services.Hal
         {
             return (byte)Math.Clamp((int)Math.Round(pValue * 255.0), 0, 255);
         }
+
+        #region Features
+
+        /// <summary>
+        /// Returns the logical features of the device (typed by <see cref="FeatureType"/>),
+        /// with higher-resolution DDF channels collapsed into their coarse feature. Values are
+        /// normalized 0..1. DDF internals (keys, DMX offsets, resolutions) are not exposed.
+        /// </summary>
+        public IReadOnlyList<HalFeature> GetFeatures(Device pDevice)
+        {
+            var description = GetDescription(pDevice);
+            var features = new List<HalFeature>();
+
+            if (description == null)
+                return features;
+
+            // Group functions by their top-level key segment, keeping only coarse (base) channels.
+            foreach (var group in description.Functions.GroupBy(f => f.Key.Split('/')[0]))
+            {
+                var coarse = group.Where(IsCoarseFunction).ToList();
+
+                if (coarse.Count == 0)
+                    continue;
+
+                var type = coarse[0].FunctionType;
+
+                switch (type)
+                {
+                    case FeatureType.Rgb:
+                        AddColorChannelFeatures(features, pDevice, ColorChannel.Red, ColorChannel.Green, ColorChannel.Blue);
+                        break;
+
+                    case FeatureType.Position:
+                        foreach (var axis in coarse)
+                        {
+                            if (DdfChannelKey.TryParse(axis.Key, out var parsed) && parsed.Position != null)
+                                features.Add(new PositionFeature(this, pDevice, parsed.Position.Value));
+                        }
+                        break;
+
+                    case FeatureType.Dimmer:
+                        features.Add(new DimmerFeature(this, pDevice));
+                        break;
+
+                    case FeatureType.Strobe:
+                        features.Add(new StrobeFeature(this, pDevice));
+                        break;
+
+                    default:
+                        // Generic continuous/stepped feature edited raw per coarse channel.
+                        foreach (var function in coarse)
+                            features.Add(new RawFeature(pDevice, function));
+                        break;
+                }
+            }
+
+            return features;
+        }
+
+        private void AddColorChannelFeatures(List<HalFeature> pFeatures, Device pDevice, params ColorChannel[] pChannels)
+        {
+            foreach (var channel in pChannels)
+            {
+                if (GetDescription(pDevice)?.GetFunction(DdfChannelKey.Rgb(channel)) != null)
+                    pFeatures.Add(new ColorChannelFeature(this, pDevice, channel));
+            }
+        }
+
+        private static bool IsCoarseFunction(DdfFunction pFunction)
+        {
+            if (!DdfChannelKey.TryParse(pFunction.Key, out var parsed))
+                return true; // dynamic key (rawstep/..., matrix/...) - no resolution suffix.
+
+            return parsed.Resolution == Resolution.Coarse;
+        }
+
+        private static double FromByte(byte pValue) => pValue / 255.0;
+
+        private static IReadOnlyList<HalFeatureStep> ToSteps(DdfFunction pFunction)
+        {
+            return pFunction.Steps
+                .Select(s => new HalFeatureStep(s.MinDmx / 255.0, s.MaxDmx / 255.0, s.Caption))
+                .ToList();
+        }
+
+        private sealed class ColorChannelFeature : HalFeature
+        {
+            private readonly HalService mHal;
+            private readonly Device mDevice;
+            private readonly ColorChannel mChannel;
+
+            public ColorChannelFeature(HalService pHal, Device pDevice, ColorChannel pChannel)
+                : base(FeatureType.Rgb, pChannel.ToString())
+            {
+                mHal = pHal;
+                mDevice = pDevice;
+                mChannel = pChannel;
+            }
+
+            public override double GetValue()
+            {
+                var (r, g, b) = mHal.GetColor(mDevice);
+                return mChannel switch
+                {
+                    ColorChannel.Red => FromByte(r),
+                    ColorChannel.Green => FromByte(g),
+                    ColorChannel.Blue => FromByte(b),
+                    _ => 0,
+                };
+            }
+
+            public override void SetValue(double pValue)
+            {
+                var (r, g, b) = mHal.GetColor(mDevice);
+                byte v = ToByte(Math.Clamp(pValue, 0, 1));
+
+                switch (mChannel)
+                {
+                    case ColorChannel.Red: r = v; break;
+                    case ColorChannel.Green: g = v; break;
+                    case ColorChannel.Blue: b = v; break;
+                }
+
+                mHal.SetColor(mDevice, r, g, b);
+            }
+        }
+
+        private sealed class PositionFeature : HalFeature
+        {
+            private readonly HalService mHal;
+            private readonly Device mDevice;
+            private readonly PositionAxis mAxis;
+
+            public PositionFeature(HalService pHal, Device pDevice, PositionAxis pAxis)
+                : base(FeatureType.Position, pAxis.ToString())
+            {
+                mHal = pHal;
+                mDevice = pDevice;
+                mAxis = pAxis;
+            }
+
+            public override double GetValue()
+            {
+                var pos = mHal.GetPosition(mDevice);
+                return mAxis == PositionAxis.Pan ? pos.Pan : pos.Tilt;
+            }
+
+            public override void SetValue(double pValue)
+            {
+                var pos = mHal.GetPosition(mDevice);
+                pValue = Math.Clamp(pValue, 0, 1);
+
+                if (mAxis == PositionAxis.Pan)
+                    mHal.SetPosition(mDevice, pValue, pos.Tilt);
+                else
+                    mHal.SetPosition(mDevice, pos.Pan, pValue);
+            }
+        }
+
+        private sealed class DimmerFeature : HalFeature
+        {
+            private readonly HalService mHal;
+            private readonly Device mDevice;
+
+            public DimmerFeature(HalService pHal, Device pDevice)
+                : base(FeatureType.Dimmer, "Dimmer")
+            {
+                mHal = pHal;
+                mDevice = pDevice;
+            }
+
+            public override double GetValue() => mHal.GetDimmer(mDevice);
+
+            public override void SetValue(double pValue) => mHal.SetDimmer(mDevice, pValue);
+        }
+
+        private sealed class StrobeFeature : HalFeature
+        {
+            private readonly HalService mHal;
+            private readonly Device mDevice;
+
+            public StrobeFeature(HalService pHal, Device pDevice)
+                : base(FeatureType.Strobe, "Strobe")
+            {
+                mHal = pHal;
+                mDevice = pDevice;
+            }
+
+            public override double GetValue() => FromByte(mDevice.GetValue(DdfChannelKey.Function(FunctionChannel.Strobe)));
+
+            public override void SetValue(double pValue) => mHal.SetStrobe(mDevice, pValue);
+        }
+
+        private sealed class RawFeature : HalFeature
+        {
+            private readonly Device mDevice;
+            private readonly DdfFunction mFunction;
+            private readonly IReadOnlyList<HalFeatureStep> mSteps;
+
+            public RawFeature(Device pDevice, DdfFunction pFunction)
+                : base(pFunction.FunctionType, pFunction.Name)
+            {
+                mDevice = pDevice;
+                mFunction = pFunction;
+                mSteps = ToSteps(pFunction);
+            }
+
+            public override IReadOnlyList<HalFeatureStep> Steps => mSteps;
+
+            public override double GetValue() => FromByte(mDevice.GetValue(mFunction.Key));
+
+            public override void SetValue(double pValue)
+            {
+                mDevice.SetValue(mFunction.Key, ToByte(Math.Clamp(pValue, 0, 1)));
+            }
+        }
+
+        #endregion
     }
 }

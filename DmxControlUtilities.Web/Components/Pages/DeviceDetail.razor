@@ -43,7 +43,7 @@ else
                 <div class="mb-2" style="display: flex; gap: 1rem; align-items: center; flex-wrap: wrap;">
                     <div>
                         <label class="form-label mb-1">Color</label>
-                        <input type="color" class="form-control form-control-color" value="@GetColorHex()" @onchange="OnColorChanged" />
+                        <input type="color" class="form-control form-control-color" value="@GetColorHex()" @onchange="OnColorChanged" @oninput="OnColorChanged" />
                     </div>
 
                     <button class="btn btn-outline-secondary btn-sm mt-4" @onclick="OnResetDefaults">Reset to defaults</button>
@@ -68,14 +68,9 @@ else
             </div>
         </div>
 
-        @foreach (var group in GetFunctionGroups())
+        @foreach (var feature in GetFeatures())
         {
-            <h5 class="mt-3">@group.Key</h5>
-
-            @foreach (var function in group)
-            {
-                <DeviceFunctionEditor Device="mDevice" Function="function" OnValueChanged="OnFunctionValueChanged" />
-            }
+            <DeviceFeatureEditor Feature="feature" OnValueChanged="OnFunctionValueChanged" />
         }
     }
 
@@ -98,14 +93,17 @@ else
     }
 
     /// <summary>
-    /// Groups functions by their top-level key segment (rgb, position, dimmer, ...).
+    /// Returns the device's logical features not already covered by the dedicated
+    /// color/dimmer/position controls above.
     /// </summary>
-    protected IEnumerable<IGrouping<string, DdfFunction>> GetFunctionGroups()
+    protected IEnumerable<HalFeature> GetFeatures()
     {
-        if (mDescription == null)
-            return Enumerable.Empty<IGrouping<string, DdfFunction>>();
+        if (mDevice == null)
+            return Enumerable.Empty<HalFeature>();
 
-        return mDescription.Functions.GroupBy(f => f.Key.Split('/')[0]);
+        var covered = new[] { FeatureType.Rgb, FeatureType.Dimmer, FeatureType.Position };
+
+        return HalService.GetFeatures(mDevice).Where(f => !covered.Contains(f.Type));
     }
 
     protected void OnChannelChanged(ChangeEventArgs pArgs)
@@ -139,7 +137,7 @@ else
 
     protected bool SupportsPosition()
     {
-        return mDescription != null && mDescription.GetFunction("position/pan") != null;
+        return mDevice != null && HalService.GetFeatures(mDevice).Any(f => f.Type == FeatureType.Position);
     }
 
     protected string GetColorHex()

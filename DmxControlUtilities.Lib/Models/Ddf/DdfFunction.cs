@@ -20,7 +20,7 @@ namespace DmxControlUtilities.Lib.Models.Ddf
         /// <summary>
         /// The DDF element this function originates from, e.g. rgb, dimmer, rawstep.
         /// </summary>
-        public DdfFunctionType FunctionType { get; set; }
+        public FeatureType FunctionType { get; set; }
 
         /// <summary>
         /// 0-based DMX channel offset relative to the device's start channel.

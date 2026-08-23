@@ -59,7 +59,7 @@ namespace DmxControlUtilities.Lib.Models.Ddf
         /// <summary>
         /// Returns all functions of the given type (e.g. dimmer, colorwheel).
         /// </summary>
-        public IEnumerable<DdfFunction> GetFunctionsByType(DdfFunctionType pFunctionType)
+        public IEnumerable<DdfFunction> GetFunctionsByType(FeatureType pFunctionType)
         {
             return Functions.Where(f => f.FunctionType == pFunctionType);
         }

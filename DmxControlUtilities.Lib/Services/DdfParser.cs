@@ -191,7 +191,7 @@ namespace DmxControlUtilities.Lib.Services
                     continue;
 
                 AddFunction(pDescription, $"{prefix}/{colorName}", CultureInfo.InvariantCulture.TextInfo.ToTitleCase(colorName),
-                    dmxChannel.Value, GetByteAttribute(channel, "defaultval"), channel, DdfFunctionType.Rgb);
+                    dmxChannel.Value, GetByteAttribute(channel, "defaultval"), channel, FeatureType.Rgb);
             }
         }
 
@@ -251,7 +251,7 @@ namespace DmxControlUtilities.Lib.Services
                     for (int color = 0; color < ordered.Length; color++)
                     {
                         AddFunction(pDescription, $"radix/{pixelIndex}/{ordered[color]}", $"Pixel {pixelIndex + 1} {ordered[color]}",
-                            channel, 0, pRadix, DdfFunctionType.Radix);
+                            channel, 0, pRadix, FeatureType.Radix);
 
                         channel++;
                     }
@@ -326,7 +326,7 @@ namespace DmxControlUtilities.Lib.Services
                             continue;
 
                         AddFunction(pDescription, $"matrix/{index}/{channel.Name.LocalName.ToLowerInvariant()}",
-                            $"Pixel {index + 1} {channel.Name.LocalName}", dmxChannel.Value, GetByteAttribute(channel, "defaultval"), channel, DdfFunctionType.Matrix);
+                            $"Pixel {index + 1} {channel.Name.LocalName}", dmxChannel.Value, GetByteAttribute(channel, "defaultval"), channel, FeatureType.Matrix);
                     }
 
                     index++;
@@ -351,7 +351,7 @@ namespace DmxControlUtilities.Lib.Services
                 for (int pixel = 0; pixel < pixels; pixel++)
                 {
                     AddFunction(pDescription, $"matrix/{pixel}/intensity", $"Pixel {pixel + 1}",
-                        startChannel + pixel, 0, pMatrix, DdfFunctionType.Matrix);
+                        startChannel + pixel, 0, pMatrix, FeatureType.Matrix);
                 }
 
                 return;
@@ -376,7 +376,7 @@ namespace DmxControlUtilities.Lib.Services
                 for (int color = 0; color < channelsPerPixel; color++)
                 {
                     AddFunction(pDescription, $"matrix/{pixel}/{ordered[color]}", $"Pixel {pixel + 1} {ordered[color]}",
-                        startChannel + pixel * channelsPerPixel + color, 0, pMatrix, DdfFunctionType.Matrix);
+                        startChannel + pixel * channelsPerPixel + color, 0, pMatrix, FeatureType.Matrix);
                 }
             }
         }
@@ -386,7 +386,7 @@ namespace DmxControlUtilities.Lib.Services
             AddFunction(pDescription, pKey, pName, pDmxChannel, pDefault, pElement, GetFunctionType(pElement.Name.LocalName));
         }
 
-        private static void AddFunction(DeviceDescription pDescription, string pKey, string pName, int pDmxChannel, byte pDefault, XElement pElement, DdfFunctionType pType)
+        private static void AddFunction(DeviceDescription pDescription, string pKey, string pName, int pDmxChannel, byte pDefault, XElement pElement, FeatureType pType)
         {
             var function = new DdfFunction
             {
@@ -431,7 +431,7 @@ namespace DmxControlUtilities.Lib.Services
             AddResolutionChannel(pDescription, pElement, pKey, pName, pType, "ultrafinedmxchannel", "ultrafine");
         }
 
-        private static void AddResolutionChannel(DeviceDescription pDescription, XElement pElement, string pKey, string pName, DdfFunctionType pType, string pAttribute, string pSuffix)
+        private static void AddResolutionChannel(DeviceDescription pDescription, XElement pElement, string pKey, string pName, FeatureType pType, string pAttribute, string pSuffix)
         {
             int? channel = GetIntAttribute(pElement, pAttribute);
 
@@ -451,36 +451,36 @@ namespace DmxControlUtilities.Lib.Services
         /// <summary>
         /// Maps a DDF element name to its function type. Custom/unknown elements map to Raw.
         /// </summary>
-        private static DdfFunctionType GetFunctionType(string pElementName)
+        private static FeatureType GetFunctionType(string pElementName)
         {
             return pElementName.ToLowerInvariant() switch
             {
-                "rgb" => DdfFunctionType.Rgb,
-                "cmy" => DdfFunctionType.Cmy,
-                "hsv" => DdfFunctionType.Hsv,
-                "dimmer" => DdfFunctionType.Dimmer,
-                "shutter" => DdfFunctionType.Shutter,
-                "strobe" or "strobo" => DdfFunctionType.Strobe,
-                "switch" => DdfFunctionType.Switch,
-                "position" => DdfFunctionType.Position,
-                "colorwheel" => DdfFunctionType.Colorwheel,
-                "colortemp" => DdfFunctionType.Colortemp,
-                "gobowheel" => DdfFunctionType.Gobowheel,
-                "focus" => DdfFunctionType.Focus,
-                "frost" => DdfFunctionType.Frost,
-                "iris" => DdfFunctionType.Iris,
-                "zoom" => DdfFunctionType.Zoom,
-                "prism" => DdfFunctionType.Prism,
-                "rotation" => DdfFunctionType.Rotation,
-                "index" => DdfFunctionType.Index,
-                "matrix" => DdfFunctionType.Matrix,
-                "radix" => DdfFunctionType.Radix,
-                "raw" => DdfFunctionType.Raw,
-                "rawstep" => DdfFunctionType.Rawstep,
-                "const" => DdfFunctionType.Const,
-                "fog" => DdfFunctionType.Fog,
-                "fan" => DdfFunctionType.Fan,
-                _ => DdfFunctionType.Raw,
+                "rgb" => FeatureType.Rgb,
+                "cmy" => FeatureType.Cmy,
+                "hsv" => FeatureType.Hsv,
+                "dimmer" => FeatureType.Dimmer,
+                "shutter" => FeatureType.Shutter,
+                "strobe" or "strobo" => FeatureType.Strobe,
+                "switch" => FeatureType.Switch,
+                "position" => FeatureType.Position,
+                "colorwheel" => FeatureType.Colorwheel,
+                "colortemp" => FeatureType.Colortemp,
+                "gobowheel" => FeatureType.Gobowheel,
+                "focus" => FeatureType.Focus,
+                "frost" => FeatureType.Frost,
+                "iris" => FeatureType.Iris,
+                "zoom" => FeatureType.Zoom,
+                "prism" => FeatureType.Prism,
+                "rotation" => FeatureType.Rotation,
+                "index" => FeatureType.Index,
+                "matrix" => FeatureType.Matrix,
+                "radix" => FeatureType.Radix,
+                "raw" => FeatureType.Raw,
+                "rawstep" => FeatureType.Rawstep,
+                "const" => FeatureType.Const,
+                "fog" => FeatureType.Fog,
+                "fan" => FeatureType.Fan,
+                _ => FeatureType.Raw,
             };
         }
 

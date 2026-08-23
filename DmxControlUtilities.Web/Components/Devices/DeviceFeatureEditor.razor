@@ -1,0 +1,72 @@
+@using DmxControlUtilities.Lib.Services.Hal
+
+<div class="mb-2">
+    <label class="form-label">@Feature.Name: @PercentText@(CurrentStepCaption != null ? $" ({CurrentStepCaption})" : "")</label>
+
+    <div style="display: flex; gap: 0.5rem; align-items: center;">
+        <input type="range" min="0" max="100" step="1" class="form-range" style="flex: 1 1 auto;"
+               value="@Percent" @oninput="OnValueInput" />
+
+        <input type="number" min="0" max="100" class="form-control form-control-sm" style="width: 5rem;"
+               value="@Percent" @onchange="OnValueInput" />
+
+        @if (Feature.Steps.Count > 0)
+        {
+            <select class="form-select form-select-sm" style="width: auto;" value="@Percent" @onchange="OnStepSelected">
+                @foreach (var step in Feature.Steps)
+                {
+                    var stepPercent = (int)Math.Round(step.MinValue * 100);
+                    <option value="@stepPercent" selected="@step.Contains(Value)">
+                        @step.Caption
+                    </option>
+                }
+            </select>
+        }
+    </div>
+</div>
+
+@code {
+
+    [Parameter]
+    public HalFeature Feature { get; set; } = null!;
+
+    [Parameter]
+    public EventCallback OnValueChanged { get; set; }
+
+    private double Value => Feature.GetValue();
+
+    private int Percent => (int)Math.Round(Value * 100);
+
+    private string PercentText => $"{Percent}%";
+
+    private string? CurrentStepCaption
+    {
+        get
+        {
+            var step = Feature.Steps.FirstOrDefault(s => s.Contains(Value));
+            return string.IsNullOrWhiteSpace(step.Caption) ? null : step.Caption;
+        }
+    }
+
+    private void OnValueInput(ChangeEventArgs pArgs)
+    {
+        if (double.TryParse(pArgs.Value?.ToString(), out double percent))
+        {
+            SetPercent(percent);
+        }
+    }
+
+    private void OnStepSelected(ChangeEventArgs pArgs)
+    {
+        if (double.TryParse(pArgs.Value?.ToString(), out double percent))
+        {
+            SetPercent(percent);
+        }
+    }
+
+    private void SetPercent(double pPercent)
+    {
+        Feature.SetValue(Math.Clamp(pPercent, 0, 100) / 100.0);
+        OnValueChanged.InvokeAsync();
+    }
+}
