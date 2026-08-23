@@ -2,10 +2,12 @@
 
 @using DmxControlUtilities.Lib.Models
 @using DmxControlUtilities.Lib.Services
+@using DmxControlUtilities.Web.Components.Devices
 @using MComponents.MGrid
 
 @inject DeviceService DeviceService
 @inject NavigationManager NavigationManager
+@inject IModalService Modal
 
 <PageTitle>Devices</PageTitle>
 
@@ -15,10 +17,17 @@
 
 <MGrid T="Device" DataSource="mDevices" EnableAdding="false" EnableEditing="false" EnableDeleting="false" EnableFilterRow="false" EnableGrouping="false" EnableExport="false" EnableImport="false" EnableSaveState="false">
     <MGridColumn Property="@nameof(Device.Name)" HeaderText="Name" PropertyType="typeof(string)" />
+    <MGridColumn Property="@nameof(Device.DescriptionId)" HeaderText="Description" PropertyType="typeof(string)" />
     <MGridColumn Property="@nameof(Device.Channel)" HeaderText="Channel" PropertyType="typeof(int)" />
-    <MGridColumn Property="@nameof(Device.R)" HeaderText="R" PropertyType="typeof(byte)" />
-    <MGridColumn Property="@nameof(Device.G)" HeaderText="G" PropertyType="typeof(byte)" />
-    <MGridColumn Property="@nameof(Device.B)" HeaderText="B" PropertyType="typeof(byte)" />
+
+    <MGridComplexColumn T="Device" Identifier="Color" HeaderText="Color">
+        <CellTemplate Context="device">
+            @{
+                var rgb = device.GetRgb();
+            }
+            <span style="display: inline-block; width: 1.2rem; height: 1.2rem; border: 1px solid #333; background-color: rgb(@rgb.R, @rgb.G, @rgb.B);"></span>
+        </CellTemplate>
+    </MGridComplexColumn>
 
     <MGridComplexColumn T="Device" Identifier="Actions" HeaderText="">
         <CellTemplate Context="device">
@@ -44,10 +53,17 @@
 
     protected void AddDevice()
     {
-        var device = new Device
+        var parameters = new ModalParameters
         {
-            Name = "Device " + (DeviceService.Devices.Count + 1)
+            { nameof(AddDeviceModal.OnDeviceSelected), EventCallback.Factory.Create<AddDeviceModal.AddDeviceResult>(this, OnDeviceSelected) }
         };
+
+        Modal.Show<AddDeviceModal>("Add device", parameters);
+    }
+
+    protected void OnDeviceSelected(AddDeviceModal.AddDeviceResult pResult)
+    {
+        var device = DeviceService.CreateDevice(pResult.Description, pResult.Channel);
 
         DeviceService.AddDevice(device);
 

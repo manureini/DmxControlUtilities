@@ -1,7 +1,7 @@
 namespace DmxControlUtilities.Lib.Models
 {
     /// <summary>
-    /// A light event which applies a color to a device at a specific time position of the audio track.
+    /// A light event which applies function values to a device at a specific time position of the audio track.
     /// </summary>
     public class LightEvent
     {
@@ -11,15 +11,32 @@ namespace DmxControlUtilities.Lib.Models
 
         public TimeSpan Time { get; set; }
 
-        public byte R { get; set; }
+        /// <summary>
+        /// Function values to apply, keyed by DDF function key (e.g. "rgb/red", "dimmer").
+        /// </summary>
+        public Dictionary<string, byte> Values { get; set; } = new();
 
-        public byte G { get; set; }
-
-        public byte B { get; set; }
-
+        /// <summary>
+        /// RGB color of the event based on its rgb function values (for display in the timeline).
+        /// Returns neutral gray when the event has no rgb values.
+        /// </summary>
         public string ColorHex
         {
-            get => $"#{R:x2}{G:x2}{B:x2}";
+            get
+            {
+                bool hasColor = Values.ContainsKey("rgb/red")
+                    || Values.ContainsKey("rgb/green")
+                    || Values.ContainsKey("rgb/blue");
+
+                if (!hasColor)
+                    return "#808080";
+
+                byte r = Values.TryGetValue("rgb/red", out byte red) ? red : (byte)0;
+                byte g = Values.TryGetValue("rgb/green", out byte green) ? green : (byte)0;
+                byte b = Values.TryGetValue("rgb/blue", out byte blue) ? blue : (byte)0;
+
+                return $"#{r:x2}{g:x2}{b:x2}";
+            }
             set
             {
                 if (string.IsNullOrWhiteSpace(value))
@@ -30,9 +47,9 @@ namespace DmxControlUtilities.Lib.Models
                 if (hex.Length != 6)
                     return;
 
-                R = Convert.ToByte(hex.Substring(0, 2), 16);
-                G = Convert.ToByte(hex.Substring(2, 2), 16);
-                B = Convert.ToByte(hex.Substring(4, 2), 16);
+                Values["rgb/red"] = Convert.ToByte(hex.Substring(0, 2), 16);
+                Values["rgb/green"] = Convert.ToByte(hex.Substring(2, 2), 16);
+                Values["rgb/blue"] = Convert.ToByte(hex.Substring(4, 2), 16);
             }
         }
     }

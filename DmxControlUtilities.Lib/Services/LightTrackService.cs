@@ -162,9 +162,10 @@ namespace DmxControlUtilities.Lib.Services
             if (device == null)
                 return;
 
-            device.R = pEvent.R;
-            device.G = pEvent.G;
-            device.B = pEvent.B;
+            foreach (var pair in pEvent.Values)
+            {
+                device.SetValue(pair.Key, pair.Value);
+            }
 
             mDeviceService.ApplyDevice(device);
         }

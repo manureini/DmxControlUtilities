@@ -1,3 +1,4 @@
+using DmxControlUtilities.Lib.Models.Ddf;
 using System.ComponentModel.DataAnnotations;
 
 namespace DmxControlUtilities.Lib.Models
@@ -10,22 +11,39 @@ namespace DmxControlUtilities.Lib.Models
         public string Name { get; set; } = string.Empty;
 
         /// <summary>
-        /// First DMX channel of the device (1 - 512). R = Channel, G = Channel + 1, B = Channel + 2
+        /// Id of the <see cref="DeviceDescription"/> (DDF file name without extension) this device was created from.
+        /// </summary>
+        [Display(Name = "Description")]
+        public string DescriptionId { get; set; } = string.Empty;
+
+        /// <summary>
+        /// First DMX channel of the device (1 - 512). Function channels are added as offsets.
         /// </summary>
         [Display(Name = "Channel")]
         [Range(1, 512)]
         public int Channel { get; set; } = 1;
 
-        [Display(Name = "Red")]
-        [Range(0, 255)]
-        public byte R { get; set; }
+        /// <summary>
+        /// Current values of the device's functions, keyed by <see cref="DdfFunction.Key"/>.
+        /// </summary>
+        public Dictionary<string, byte> Values { get; set; } = new();
 
-        [Display(Name = "Green")]
-        [Range(0, 255)]
-        public byte G { get; set; }
+        public byte GetValue(string pKey)
+        {
+            return Values.TryGetValue(pKey, out byte value) ? value : (byte)0;
+        }
 
-        [Display(Name = "Blue")]
-        [Range(0, 255)]
-        public byte B { get; set; }
+        public void SetValue(string pKey, byte pValue)
+        {
+            Values[pKey] = pValue;
+        }
+
+        /// <summary>
+        /// Approximate RGB color of the device based on its rgb functions (for display in grids/timelines).
+        /// </summary>
+        public (byte R, byte G, byte B) GetRgb()
+        {
+            return (GetValue("rgb/red"), GetValue("rgb/green"), GetValue("rgb/blue"));
+        }
     }
 }

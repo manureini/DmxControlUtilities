@@ -1,7 +1,9 @@
 @page "/devices/{Id:guid}"
 
 @using DmxControlUtilities.Lib.Models
+@using DmxControlUtilities.Lib.Models.Ddf
 @using DmxControlUtilities.Lib.Services
+@using DmxControlUtilities.Web.Components.Devices
 
 @inject DeviceService DeviceService
 @inject NavigationManager NavigationManager
@@ -14,32 +16,34 @@
 }
 else
 {
-    <h3>Device</h3>
+    <h3>@mDevice.Name</h3>
 
     <div class="mb-3">
         <label class="form-label">Name</label>
         <input class="form-control" @bind="mDevice.Name" />
     </div>
 
-    <div class="mb-3">
-        <label class="form-label">Channel (1 - 510)</label>
-        <input type="number" min="1" max="510" class="form-control" value="@mDevice.Channel" @onchange="OnChannelChanged" />
-    </div>
+    @if (mDescription == null)
+    {
+        <p>Device description "@mDevice.DescriptionId" not found.</p>
+    }
+    else
+    {
+        <div class="mb-3">
+            <label class="form-label">Channel (1 - @(513 - mDescription.ChannelCount))</label>
+            <input type="number" min="1" max="@(513 - mDescription.ChannelCount)" class="form-control" value="@mDevice.Channel" @onchange="OnChannelChanged" />
+        </div>
 
-    <div class="mb-3">
-        <label class="form-label">Red: @mDevice.R</label>
-        <input type="range" min="0" max="255" step="1" class="form-range" value="@mDevice.R" @oninput="e => OnColorChanged(c => c.R = ParseByte(e), e)" />
-    </div>
+        @foreach (var group in GetFunctionGroups())
+        {
+            <h5 class="mt-3">@group.Key</h5>
 
-    <div class="mb-3">
-        <label class="form-label">Green: @mDevice.G</label>
-        <input type="range" min="0" max="255" step="1" class="form-range" value="@mDevice.G" @oninput="e => OnColorChanged(c => c.G = ParseByte(e), e)" />
-    </div>
-
-    <div class="mb-3">
-        <label class="form-label">Blue: @mDevice.B</label>
-        <input type="range" min="0" max="255" step="1" class="form-range" value="@mDevice.B" @oninput="e => OnColorChanged(c => c.B = ParseByte(e), e)" />
-    </div>
+            @foreach (var function in group)
+            {
+                <DeviceFunctionEditor Device="mDevice" Function="function" OnValueChanged="OnFunctionValueChanged" />
+            }
+        }
+    }
 
     <button class="btn btn-secondary" @onclick="Back">Back</button>
 }
@@ -51,34 +55,44 @@ else
 
     protected Device? mDevice;
 
+    protected DeviceDescription? mDescription;
+
     protected override void OnParametersSet()
     {
         mDevice = DeviceService.GetDevice(Id);
+        mDescription = mDevice != null ? DeviceService.GetDescription(mDevice) : null;
     }
 
-    protected static byte ParseByte(ChangeEventArgs pArgs)
+    /// <summary>
+    /// Groups functions by their top-level key segment (rgb, position, dimmer, ...).
+    /// </summary>
+    protected IEnumerable<IGrouping<string, DdfFunction>> GetFunctionGroups()
     {
-        return byte.TryParse(pArgs.Value?.ToString(), out var value) ? value : (byte)0;
+        if (mDescription == null)
+            return Enumerable.Empty<IGrouping<string, DdfFunction>>();
+
+        return mDescription.Functions.GroupBy(f => f.Key.Split('/')[0]);
     }
 
     protected void OnChannelChanged(ChangeEventArgs pArgs)
     {
-        if (mDevice == null)
+        if (mDevice == null || mDescription == null)
             return;
 
-        if (int.TryParse(pArgs.Value?.ToString(), out var channel) && channel >= 1 && channel <= 510)
+        if (int.TryParse(pArgs.Value?.ToString(), out var channel)
+            && channel >= 1
+            && channel + mDescription.ChannelCount - 1 <= 512)
         {
             mDevice.Channel = channel;
             DeviceService.ApplyDevice(mDevice);
         }
     }
 
-    protected void OnColorChanged(Action<Device> pSetValue, ChangeEventArgs pArgs)
+    protected void OnFunctionValueChanged()
     {
         if (mDevice == null)
             return;
 
-        pSetValue(mDevice);
         DeviceService.ApplyDevice(mDevice);
     }
 

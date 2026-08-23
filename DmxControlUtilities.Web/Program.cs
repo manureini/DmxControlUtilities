@@ -29,6 +29,8 @@ namespace DmxControlUtilities.Web
             builder.Services.AddSingleton<AudioPlaybackService>();
             builder.Services.AddSingleton<PlaybackClockService>();
             builder.Services.AddSingleton<DmxControlUtilities.Lib.Services.DmxFtdiService>();
+            builder.Services.AddSingleton(sp =>
+                new DmxControlUtilities.Lib.Services.DeviceDescriptionService(builder.Configuration["Ddf:Folder"]));
             builder.Services.AddSingleton<DmxControlUtilities.Lib.Services.DeviceService>();
             builder.Services.AddSingleton<DmxControlUtilities.Lib.Services.LightTrackService>();
             builder.Services.AddSingleton<DmxControlUtilities.Lib.Services.TimecodeShowService>();

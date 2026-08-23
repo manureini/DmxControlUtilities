@@ -2,6 +2,12 @@
 using DmxControlUtilities.Lib.Models;
 using DmxControlUtilities.Lib.Services;
 
+if (args.Length > 0 && args[0] == "ddf-test")
+{
+    DdfSmokeTest.Run();
+    return;
+}
+
 var dmzFileService = new DmzFileService();
 var szeneListService = new SzeneListService();
 

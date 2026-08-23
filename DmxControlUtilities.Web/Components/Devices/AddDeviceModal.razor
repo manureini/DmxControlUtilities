@@ -1,0 +1,74 @@
+@using DmxControlUtilities.Lib.Models.Ddf
+@using DmxControlUtilities.Lib.Services
+
+@inject DeviceDescriptionService DescriptionService
+
+<div style="min-width: 320px;">
+    @if (mDescriptions.Count == 0)
+    {
+        <p>No device descriptions found in folder:<br /><small>@DescriptionService.Folder</small></p>
+        <button class="btn btn-secondary" @onclick="Reload">Reload</button>
+    }
+    else
+    {
+        <div class="mb-3">
+            <label class="form-label">Description</label>
+            <select class="form-select" @bind="mSelectedDescriptionId">
+                @foreach (var description in mDescriptions)
+                {
+                    <option value="@description.Id">@description.DisplayName</option>
+                }
+            </select>
+        </div>
+
+        <div class="mb-3">
+            <label class="form-label">Start channel</label>
+            <input type="number" min="1" max="512" class="form-control" @bind="mChannel" />
+        </div>
+
+        <button class="btn btn-primary" @onclick="Confirm" disabled="@(mSelectedDescriptionId == null)">Add</button>
+    }
+</div>
+
+@code {
+
+    [CascadingParameter]
+    public BlazoredModalInstance Modal { get; set; } = null!;
+
+    [Parameter]
+    public EventCallback<AddDeviceResult> OnDeviceSelected { get; set; }
+
+    private IReadOnlyList<DeviceDescription> mDescriptions = new List<DeviceDescription>();
+
+    private string? mSelectedDescriptionId;
+
+    private int mChannel = 1;
+
+    protected override void OnInitialized()
+    {
+        mDescriptions = DescriptionService.Descriptions;
+        mSelectedDescriptionId = mDescriptions.FirstOrDefault()?.Id;
+    }
+
+    private void Reload()
+    {
+        DescriptionService.Reload();
+        mDescriptions = DescriptionService.Descriptions;
+        mSelectedDescriptionId ??= mDescriptions.FirstOrDefault()?.Id;
+    }
+
+    private async Task Confirm()
+    {
+        var description = mDescriptions.FirstOrDefault(d => d.Id == mSelectedDescriptionId);
+
+        if (description == null)
+            return;
+
+        await Modal.CloseAsync();
+
+        if (OnDeviceSelected.HasDelegate)
+            await OnDeviceSelected.InvokeAsync(new AddDeviceResult(description, mChannel));
+    }
+
+    public record AddDeviceResult(DeviceDescription Description, int Channel);
+}
