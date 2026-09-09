@@ -1,0 +1,225 @@
+@page "/programmer"
+
+@using DmxControlUtilities.Lib.Models
+@using DmxControlUtilities.Lib.Services
+@using DmxControlUtilities.Lib.Services.Hal
+@using DmxControlUtilities.Web.Components.Devices
+@using DmxControlUtilities.Web.Components.Programmer
+@using MComponents.MGrid
+@using MComponents.MSelect
+@implements IDisposable
+
+@inject ProgrammerService ProgrammerService
+@inject DeviceService DeviceService
+@inject NavigationManager NavigationManager
+@inject IModalService Modal
+
+<PageTitle>Programmer</PageTitle>
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h3>Programmer</h3>
+    <div class="d-flex gap-2">
+        <button type="button" class="btn btn-outline-danger" @onclick="ClearProgrammer" disabled="@(!ProgrammerService.HasValues)">
+            Clear
+        </button>
+        <button type="button" class="btn btn-outline-secondary" @onclick="UndoClear" disabled="@(!ProgrammerService.CanUndoClear)">
+            Undo clear
+        </button>
+        <button type="button" class="btn btn-success" @onclick="OpenStoreInCueModal" disabled="@(!ProgrammerService.HasValues)">
+            Store in Cue
+        </button>
+    </div>
+</div>
+
+<p class="small text-muted">
+    Values changed here temporarily override cuelist playback and device controls. Stored into Cues when ready.
+</p>
+
+<div class="row">
+    <!-- Left Column: Device selection & HAL controls -->
+    <div class="col-lg-5 col-md-6 mb-3">
+        <div class="card">
+            <div class="card-header">
+                <strong>Device Control</strong>
+            </div>
+            <div class="card-body">
+                @if (mDevices.Count == 0)
+                {
+                    <p class="text-muted">No devices configured. Add devices first on the <a href="devices">Devices</a> page.</p>
+                }
+                else
+                {
+                    <div class="mb-3">
+                        <label class="form-label">Select Device to edit</label>
+                        <MSelect @bind-Value="mSelectedDevice"
+                                 @bind-Value:after="OnSelectedDeviceChanged"
+                                 Options="mDevices"
+                                 Property="@nameof(Device.Name)"
+                                 EnableSearch="true" />
+                    </div>
+
+                    @if (mStagingDevice != null && mStagingFeatures.Count > 0)
+                    {
+                        <div class="border rounded p-3 mb-2 bg-light">
+                            <h6 class="mb-3">@mSelectedDevice?.Name</h6>
+
+                            @foreach (var feature in mStagingFeatures)
+                            {
+                                <FeatureEditor Feature="feature" OnValueChanged="OnFeatureValueChanged" />
+                            }
+                        </div>
+                    }
+                    else if (mSelectedDevice != null)
+                    {
+                        <p class="text-muted">Selected device has no logical features.</p>
+                    }
+                }
+            </div>
+        </div>
+    </div>
+
+    <!-- Right Column: Staged Programmer values table -->
+    <div class="col-lg-7 col-md-6 mb-3">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <strong>Programmer Values (@mEntries.Count)</strong>
+                @if (mSelectedDevice != null && mEntries.Any(e => e.DeviceId == mSelectedDevice.Id))
+                {
+                    <button type="button" class="btn btn-outline-warning btn-sm" @onclick="DeleteCurrentDeviceFromProgrammer">
+                        Delete @mSelectedDevice.Name values
+                    </button>
+                }
+            </div>
+            <div class="card-body p-0">
+                @if (mEntries.Count == 0)
+                {
+                    <div class="p-3 text-muted">Programmer is empty. Change any device feature to stage values.</div>
+                }
+                else
+                {
+                    <MGrid T="ProgrammerValueEntry" DataSource="mEntries" EnableAdding="false" EnableEditing="false"
+                           EnableDeleting="false" EnableFilterRow="false" EnableGrouping="false" EnableExport="false"
+                           EnableImport="false" EnableSaveState="false">
+                        <MGridColumn Property="@nameof(ProgrammerValueEntry.DeviceName)" HeaderText="Device" PropertyType="typeof(string)" />
+                        <MGridColumn Property="@nameof(ProgrammerValueEntry.FeatureName)" HeaderText="Feature" PropertyType="typeof(string)" />
+                        <MGridColumn Property="@nameof(ProgrammerValueEntry.DisplayValue)" HeaderText="Value" PropertyType="typeof(string)" />
+                        <MGridComplexColumn T="ProgrammerValueEntry" Identifier="Actions" HeaderText="">
+                            <CellTemplate Context="entry">
+                                <button type="button" class="btn btn-sm btn-outline-danger" @onclick="() => DeleteEntry(entry)">
+                                    ✕
+                                </button>
+                            </CellTemplate>
+                        </MGridComplexColumn>
+                    </MGrid>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private IReadOnlyList<Device> mDevices = Array.Empty<Device>();
+    private Device? mSelectedDevice;
+    private Device? mStagingDevice;
+    private IReadOnlyList<HalFeature> mStagingFeatures = Array.Empty<HalFeature>();
+    private List<ProgrammerValueEntry> mEntries = new();
+
+    protected override void OnInitialized()
+    {
+        mDevices = DeviceService.Devices;
+        ProgrammerService.Changed += OnProgrammerChanged;
+
+        if (mDevices.Count > 0)
+        {
+            mSelectedDevice = mDevices.First();
+            SetupStagingDevice();
+        }
+
+        RefreshEntries();
+    }
+
+    private void OnProgrammerChanged()
+    {
+        InvokeAsync(() =>
+        {
+            RefreshEntries();
+            SetupStagingDevice();
+            StateHasChanged();
+        });
+    }
+
+    private void OnSelectedDeviceChanged()
+    {
+        SetupStagingDevice();
+    }
+
+    private void SetupStagingDevice()
+    {
+        if (mSelectedDevice == null)
+        {
+            mStagingDevice = null;
+            mStagingFeatures = Array.Empty<HalFeature>();
+            return;
+        }
+
+        mStagingDevice = ProgrammerService.GetStagingDevice(mSelectedDevice);
+        mStagingFeatures = ProgrammerService.GetStagingFeatures(mStagingDevice);
+    }
+
+    private void OnFeatureValueChanged()
+    {
+        if (mStagingDevice != null)
+        {
+            ProgrammerService.CommitStagingDevice(mStagingDevice);
+        }
+    }
+
+    private void RefreshEntries()
+    {
+        mEntries = ProgrammerService.GetEntries().ToList();
+    }
+
+    private void ClearProgrammer()
+    {
+        ProgrammerService.Clear();
+    }
+
+    private void UndoClear()
+    {
+        ProgrammerService.UndoClear();
+    }
+
+    private void DeleteEntry(ProgrammerValueEntry pEntry)
+    {
+        ProgrammerService.DeleteFeature(pEntry.DeviceId, pEntry.Feature);
+    }
+
+    private void DeleteCurrentDeviceFromProgrammer()
+    {
+        if (mSelectedDevice != null)
+        {
+            ProgrammerService.DeleteDevice(mSelectedDevice.Id);
+        }
+    }
+
+    private void OpenStoreInCueModal()
+    {
+        var parameters = new ModalParameters
+        {
+            { nameof(StoreInCueModal.ProgrammerValues), ProgrammerService.GetValuesSnapshot() },
+            { nameof(StoreInCueModal.OnStored), EventCallback.Factory.Create(this, OnStoredInCue) }
+        };
+
+        Modal.Show<StoreInCueModal>("Store Programmer in Cue", parameters);
+    }
+
+    private void OnStoredInCue()
+    {
+        // Keep values in programmer as per DMXControl 3 successive distribution workflow
+    }
+
+    public void Dispose()
+    {
+        ProgrammerService.Changed -= OnProgrammerChanged;
+    }
+}

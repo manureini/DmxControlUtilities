@@ -25,7 +25,11 @@ namespace DmxControlUtilities.Lib.Models
         [Range(0, int.MaxValue)]
         public int DelayMilliseconds { get; set; }
 
-        public Dictionary<Guid, Dictionary<string, byte>> DeviceValues { get; set; } = new();
+        /// <summary>
+        /// Staged HAL feature values per device: device id -> (feature key -> typed value).
+        /// Logical features only (Color, Position, Dimmer, ...) - raw DDF channels are never stored.
+        /// </summary>
+        public Dictionary<Guid, Dictionary<string, CueFeatureValue>> DeviceValues { get; set; } = new();
 
         public Cue Clone()
         {
@@ -38,7 +42,7 @@ namespace DmxControlUtilities.Lib.Models
                 TriggerMilliseconds = TriggerMilliseconds,
                 FadeMilliseconds = FadeMilliseconds,
                 DelayMilliseconds = DelayMilliseconds,
-                DeviceValues = DeviceValues.ToDictionary(d => d.Key, d => new Dictionary<string, byte>(d.Value))
+                DeviceValues = DeviceValues.ToDictionary(d => d.Key, d => d.Value.ToDictionary(f => f.Key, f => f.Value.Clone()))
             };
         }
     }

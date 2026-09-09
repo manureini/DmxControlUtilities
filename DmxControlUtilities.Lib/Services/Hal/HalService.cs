@@ -21,11 +21,27 @@ namespace DmxControlUtilities.Lib.Services.Hal
 
         private readonly DeviceDescriptionService mDescriptionService;
         private readonly DeviceService? mDeviceService;
+        private readonly bool mAutoApply;
 
         public HalService(DeviceDescriptionService pDescriptionService, DeviceService? pDeviceService = null)
+            : this(pDescriptionService, pDeviceService, true)
+        {
+        }
+
+        private HalService(DeviceDescriptionService pDescriptionService, DeviceService? pDeviceService, bool pAutoApply)
         {
             mDescriptionService = pDescriptionService;
             mDeviceService = pDeviceService;
+            mAutoApply = pAutoApply;
+        }
+
+        /// <summary>
+        /// Creates a HAL view that mutates device values without sending them to the DMX universe.
+        /// Used by the Programmer to edit a detached staging device before values are stored or released.
+        /// </summary>
+        public HalService WithoutApply()
+        {
+            return new HalService(mDescriptionService, mDeviceService, false);
         }
 
         private DeviceDescription? GetDescription(Device pDevice)
@@ -35,11 +51,13 @@ namespace DmxControlUtilities.Lib.Services.Hal
 
         /// <summary>
         /// Pushes the device's current values to the DMX universe. Called automatically by the
-        /// typed setters; only call this directly when values were changed outside of them.
+        /// typed setters when this HAL view applies changes; only call this directly when values
+        /// were changed outside of them.
         /// </summary>
         public void Apply(Device pDevice)
         {
-            mDeviceService?.ApplyDevice(pDevice);
+            if (mAutoApply)
+                mDeviceService?.ApplyDevice(pDevice);
         }
 
         #region Color
@@ -576,6 +594,78 @@ namespace DmxControlUtilities.Lib.Services.Hal
             pDevice.SetValue(pKey, pValue);
         }
 
+        /// <summary>
+        /// Sets the value (0..1) of a feature by its feature key (the DDF group key, e.g.
+        /// "rgb", "position", "dimmer", "rawstep/Program"). Composite features map through
+        /// the color/position semantics; scalar features write to the coarse channel,
+        /// honoring DDF ranges.
+        /// </summary>
+        public void SetFeatureValue(Device pDevice, string pFeatureKey, double pValue)
+        {
+            var description = GetDescription(pDevice);
+
+            if (description == null)
+                return;
+
+            pValue = Math.Clamp(pValue, 0, 1);
+
+            switch (pFeatureKey)
+            {
+                case "rgb" or "cmy" or "hsv":
+                    // Scalar write to a color feature: scale the current color's brightness.
+                    var (cr, cg, cb) = GetColor(pDevice);
+                    double brightness = Math.Max(cr, Math.Max(cg, cb)) / 255.0;
+
+                    if (brightness <= 0)
+                    {
+                        byte v = ToByte(pValue);
+                        SetColorCore(pDevice, v, v, v);
+                    }
+                    else
+                    {
+                        double scale = pValue / brightness;
+                        SetColorCore(pDevice, ToByte(cr / 255.0 * scale), ToByte(cg / 255.0 * scale), ToByte(cb / 255.0 * scale));
+                    }
+                    Apply(pDevice);
+                    return;
+
+                case "position":
+                    var (pan, tilt) = GetPosition(pDevice);
+                    SetPositionCore(pDevice, pValue, tilt);
+                    Apply(pDevice);
+                    return;
+            }
+
+            var function = description.GetFunction(pFeatureKey);
+
+            if (function == null)
+                return;
+
+            if (function.FunctionType == DdfFunctionType.Dimmer)
+            {
+                SetDimmerCore(pDevice, pValue);
+                Apply(pDevice);
+                return;
+            }
+
+            if (function.FunctionType == DdfFunctionType.Strobe)
+            {
+                SetStrobeCore(pDevice, pValue);
+                Apply(pDevice);
+                return;
+            }
+
+            var linear = function.Ranges.FirstOrDefault(r => r.Type.Equals("linear", StringComparison.OrdinalIgnoreCase))
+                ?? function.Ranges.FirstOrDefault();
+
+            int minDmx = linear?.MinDmx ?? 0;
+            int maxDmx = linear?.MaxDmx ?? 255;
+
+            int dmx = (int)Math.Round(minDmx + pValue * (maxDmx - minDmx));
+            pDevice.SetValue(pFeatureKey, (byte)Math.Clamp(dmx, 0, 255));
+            Apply(pDevice);
+        }
+
         private static bool SetIfPresent(Device pDevice, DeviceDescription pDescription, string pKey, byte pValue)
         {
             if (pDescription.GetFunction(pKey) == null)
@@ -605,8 +695,8 @@ namespace DmxControlUtilities.Lib.Services.Hal
             if (description == null)
                 return features;
 
-            // Group functions by their top-level key segment, keeping only coarse (base) channels.
-            foreach (var group in description.Functions.GroupBy(f => f.Key.Split('/')[0]))
+            // Group functions by their feature key, keeping only coarse (base) channels.
+            foreach (var group in description.Functions.GroupBy(f => FeatureKeyOf(f.Key)))
             {
                 var coarse = group.Where(IsCoarseFunction).ToList();
 
@@ -618,6 +708,8 @@ namespace DmxControlUtilities.Lib.Services.Hal
                 switch (type)
                 {
                     case DdfFunctionType.Rgb:
+                    case DdfFunctionType.Cmy:
+                    case DdfFunctionType.Hsv:
                         features.Add(new ColorFeature(this, pDevice));
                         break;
 
@@ -633,12 +725,74 @@ namespace DmxControlUtilities.Lib.Services.Hal
                         features.Add(new StrobeFeature(this, pDevice));
                         break;
 
+                    case DdfFunctionType.Const:
+                    case DdfFunctionType.Raw:
+                        // Fixed constants and uninterpreted raw channels are not editable features.
+                        break;
+
                     default:
+                        features.Add(new GenericFeature(this, pDevice, group.Key, MapFeatureType(type), coarse));
                         break;
                 }
             }
 
             return features;
+        }
+
+        /// <summary>
+        /// The feature key of a channel key: all channels of a composite feature collapse into the
+        /// feature group ("rgb/red" -> "rgb", "position/pan/fine" -> "position", "dimmer/fine" -> "dimmer").
+        /// </summary>
+        private static string FeatureKeyOf(string pKey)
+        {
+            if (DdfChannelKey.TryParse(pKey, out var parsed))
+            {
+                if (parsed.Color != null)
+                    return "rgb";
+
+                if (parsed.Cmy != null)
+                    return "cmy";
+
+                if (parsed.Hsv != null)
+                    return "hsv";
+
+                if (parsed.Position != null)
+                    return "position";
+
+                if (parsed.Function != null)
+                    return DdfChannelKey.Function(parsed.Function.Value);
+            }
+
+            return pKey;
+        }
+
+        private static FeatureType MapFeatureType(DdfFunctionType pType)
+        {
+            return pType switch
+            {
+                DdfFunctionType.Rgb or DdfFunctionType.Cmy or DdfFunctionType.Hsv => FeatureType.Color,
+                DdfFunctionType.Dimmer => FeatureType.Dimmer,
+                DdfFunctionType.Shutter => FeatureType.Shutter,
+                DdfFunctionType.Strobe => FeatureType.Strobe,
+                DdfFunctionType.Switch => FeatureType.Switch,
+                DdfFunctionType.Position => FeatureType.Position,
+                DdfFunctionType.Colorwheel => FeatureType.Colorwheel,
+                DdfFunctionType.Colortemp => FeatureType.Colortemp,
+                DdfFunctionType.Gobowheel => FeatureType.Gobowheel,
+                DdfFunctionType.Focus => FeatureType.Focus,
+                DdfFunctionType.Frost => FeatureType.Frost,
+                DdfFunctionType.Iris => FeatureType.Iris,
+                DdfFunctionType.Zoom => FeatureType.Zoom,
+                DdfFunctionType.Prism => FeatureType.Prism,
+                DdfFunctionType.Rotation => FeatureType.Rotation,
+                DdfFunctionType.Index => FeatureType.Index,
+                DdfFunctionType.Matrix => FeatureType.Matrix,
+                DdfFunctionType.Radix => FeatureType.Radix,
+                DdfFunctionType.Rawstep => FeatureType.Rawstep,
+                DdfFunctionType.Fog => FeatureType.Fog,
+                DdfFunctionType.Fan => FeatureType.Fan,
+                _ => FeatureType.Other,
+            };
         }
 
         private static bool IsCoarseFunction(DdfFunction pFunction)
@@ -658,8 +812,54 @@ namespace DmxControlUtilities.Lib.Services.Hal
         public sealed class ColorFeature : HalFeature
         {
             public ColorFeature(HalService pHal, Device pDevice)
-                : base(pHal, pDevice, FeatureType.Color, "Color")
+                : base(pHal, pDevice, FeatureType.Color, "rgb", "Color")
             {
+            }
+
+            public override IReadOnlyList<string> GetKeys()
+            {
+                var description = mHal.GetDescription(mDevice);
+                var keys = new List<string>();
+
+                if (description == null)
+                    return keys;
+
+                var wheel = description.GetFunctionsByType(DdfFunctionType.Colorwheel).FirstOrDefault();
+                bool hasMixing = description.GetFunctionsByPrefix("rgb/").Any()
+                    || description.GetFunctionsByPrefix("cmy/").Any()
+                    || description.GetFunctionsByPrefix("hsv/").Any();
+
+                if (hasMixing)
+                {
+                    keys.AddRange(description.Functions
+                        .Where(f => f.Key.StartsWith("rgb/", StringComparison.OrdinalIgnoreCase)
+                            || f.Key.StartsWith("cmy/", StringComparison.OrdinalIgnoreCase)
+                            || f.Key.StartsWith("hsv/", StringComparison.OrdinalIgnoreCase))
+                        .Where(IsCoarseFunction)
+                        .Select(f => f.Key));
+                }
+                else if (wheel != null)
+                {
+                    keys.Add(wheel.Key);
+                }
+
+                return keys;
+            }
+
+            public override IReadOnlyList<HalFeatureStep> Steps
+            {
+                get
+                {
+                    var description = mHal.GetDescription(mDevice);
+                    var wheel = description?.GetFunctionsByType(DdfFunctionType.Colorwheel).FirstOrDefault();
+
+                    if (wheel == null)
+                        return Array.Empty<HalFeatureStep>();
+
+                    return wheel.Steps
+                        .Select(s => new HalFeatureStep(s.MinDmx / 255.0, s.MaxDmx / 255.0, s.Caption))
+                        .ToList();
+                }
             }
 
             /// <summary>
@@ -705,8 +905,22 @@ namespace DmxControlUtilities.Lib.Services.Hal
         public sealed class PositionFeature : HalFeature
         {
             public PositionFeature(HalService pHal, Device pDevice)
-                : base(pHal, pDevice, FeatureType.Position, "Position")
+                : base(pHal, pDevice, FeatureType.Position, "position", "Position")
             {
+            }
+
+            public override IReadOnlyList<string> GetKeys()
+            {
+                var description = mHal.GetDescription(mDevice);
+
+                if (description == null)
+                    return Array.Empty<string>();
+
+                return description.Functions
+                    .Where(f => f.FunctionType == DdfFunctionType.Position)
+                    .Where(IsCoarseFunction)
+                    .Select(f => f.Key)
+                    .ToList();
             }
 
             /// <summary>
@@ -737,9 +951,11 @@ namespace DmxControlUtilities.Lib.Services.Hal
         private sealed class DimmerFeature : HalFeature
         {
             public DimmerFeature(HalService pHal, Device pDevice)
-                : base(pHal, pDevice, FeatureType.Dimmer, "Dimmer")
+                : base(pHal, pDevice, FeatureType.Dimmer, "dimmer", "Dimmer")
             {
             }
+
+            public override IReadOnlyList<string> GetKeys() => new[] { Feature };
 
             public override double GetValue() => mHal.GetDimmer(mDevice);
 
@@ -748,15 +964,77 @@ namespace DmxControlUtilities.Lib.Services.Hal
 
         private sealed class StrobeFeature : HalFeature
         {
-            public StrobeFeature(HalService pHal, Device pDevice)
-                : base(pHal, pDevice, FeatureType.Strobe, "Strobe")
-            {
+            private readonly DdfFunction? mFunction;
 
+            public StrobeFeature(HalService pHal, Device pDevice)
+                : base(pHal, pDevice, FeatureType.Strobe, "strobe", "Strobe")
+            {
+                var description = pHal.GetDescription(pDevice);
+                mFunction = description?.GetFunction(Feature);
             }
 
-            public override double GetValue() => FromByte(mDevice.GetValue(DdfChannelKey.Function(FunctionChannel.Strobe)));
+            public override IReadOnlyList<string> GetKeys() => new[] { Feature };
+
+            public override double GetValue()
+            {
+                byte dmx = mDevice.GetValue(Feature);
+                var range = mFunction?.Ranges.FirstOrDefault();
+
+                if (range != null && (range.MinDmx != 0 || range.MaxDmx != 255))
+                {
+                    int span = range.MaxDmx - range.MinDmx;
+                    return span == 0 ? 0 : Math.Clamp((dmx - range.MinDmx) / (double)span, 0, 1);
+                }
+
+                return FromByte(dmx);
+            }
 
             public override void SetValue(double pValue) => mHal.SetStrobe(mDevice, pValue);
+        }
+
+        /// <summary>
+        /// A scalar feature for any function type without dedicated HAL semantics
+        /// (zoom, focus, gobo wheel, colorwheel, rawstep, ...). Continuous functions behave
+        /// as a 0..1 slider honoring DDF ranges; step functions expose their DDF steps.
+        /// </summary>
+        private sealed class GenericFeature : HalFeature
+        {
+            private readonly IReadOnlyList<string> mKeys;
+            private readonly DdfFunction? mFunction;
+            private readonly IReadOnlyList<HalFeatureStep> mSteps;
+
+            public GenericFeature(HalService pHal, Device pDevice, string pFeatureKey, FeatureType pType, IReadOnlyList<DdfFunction> pCoarse)
+                : base(pHal, pDevice, pType, pFeatureKey, pCoarse[0].Name)
+            {
+                mKeys = pCoarse.Select(f => f.Key).ToList();
+                mFunction = pCoarse[0];
+                mSteps = mFunction.Steps
+                    .Select(s => new HalFeatureStep(s.MinDmx / 255.0, s.MaxDmx / 255.0, s.Caption))
+                    .ToList();
+            }
+
+            public override IReadOnlyList<string> GetKeys() => mKeys;
+
+            public override IReadOnlyList<HalFeatureStep> Steps => mSteps;
+
+            public override double GetValue()
+            {
+                byte dmx = mDevice.GetValue(Feature);
+                var range = mFunction?.Ranges.FirstOrDefault();
+
+                if (range != null && (range.MinDmx != 0 || range.MaxDmx != 255))
+                {
+                    int span = range.MaxDmx - range.MinDmx;
+                    return span == 0 ? 0 : Math.Clamp((dmx - range.MinDmx) / (double)span, 0, 1);
+                }
+
+                return FromByte(dmx);
+            }
+
+            public override void SetValue(double pValue)
+            {
+                mHal.SetFeatureValue(mDevice, Feature, pValue);
+            }
         }
 
 

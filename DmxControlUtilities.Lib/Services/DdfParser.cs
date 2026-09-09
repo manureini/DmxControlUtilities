@@ -278,7 +278,7 @@ namespace DmxControlUtilities.Lib.Services
                 {
                     // Fine/ultra/ultrafine channels are added by AddFunction.
                     AddFunction(pDescription, $"position/{axisName}", CultureInfo.InvariantCulture.TextInfo.ToTitleCase(axisName),
-                        dmxChannel.Value, GetByteAttribute(axis, "defaultval"), axis);
+                        dmxChannel.Value, GetByteAttribute(axis, "defaultval"), axis, DdfFunctionType.Position);
                 }
             }
         }

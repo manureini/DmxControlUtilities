@@ -24,17 +24,22 @@ namespace DmxControlUtilities.Lib.Services.Hal
         public FeatureType Type { get; }
 
         /// <summary>
-        /// Display name distinguishing multiple features of the same <see cref="Type"/>,
-        /// e.g. "Red"/"Green"/"Blue" for <see cref="FeatureType.Rgb"/>,
-        /// "Pan"/"Tilt" for <see cref="FeatureType.Position"/>.
+        /// Stable key of the feature: the DDF group key of its functions
+        /// (e.g. "rgb", "dimmer", "position", "rawstep/Program").
+        /// </summary>
+        public string Feature { get; }
+
+        /// <summary>
+        /// Display name of the feature, e.g. "Color", "Dimmer", "Program".
         /// </summary>
         public string Name { get; }
 
-        protected HalFeature(HalService pHal, Device pDevice, FeatureType pType, string pName)
+        protected HalFeature(HalService pHal, Device pDevice, FeatureType pType, string pFeature, string pName)
         {
             mHal = pHal;
             mDevice = pDevice;
             Type = pType;
+            Feature = pFeature;
             Name = pName;
         }
 
@@ -47,6 +52,12 @@ namespace DmxControlUtilities.Lib.Services.Hal
         /// Sets the value normalized to 0..1, distributing it onto the underlying DDF channels.
         /// </summary>
         public abstract void SetValue(double pValue);
+
+        /// <summary>
+        /// The coarse DDF channel keys backing this feature (fine/ultra resolutions are
+        /// collapsed into the coarse channel and not listed separately).
+        /// </summary>
+        public abstract IReadOnlyList<string> GetKeys();
 
         /// <summary>
         /// Discrete steps of this feature (e.g. colorwheel/gobowheel/rawstep). Empty for continuous features.

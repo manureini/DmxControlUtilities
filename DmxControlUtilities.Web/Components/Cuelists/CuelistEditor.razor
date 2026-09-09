@@ -6,6 +6,8 @@
 @implements IAsyncDisposable
 
 @inject CuelistService CuelistService
+@inject ProgrammerService ProgrammerService
+@inject NavigationManager NavigationManager
 
 @if (mCuelist == null)
 {
@@ -90,6 +92,7 @@ else
             <CellTemplate Context="cue">
                 <div class="d-flex flex-wrap gap-1">
                     <button type="button" class="btn btn-primary btn-sm" @onclick="() => EditCue(cue)" disabled="@EditingDisabled">Edit</button>
+                    <button type="button" class="btn btn-outline-info btn-sm" @onclick="() => LoadCueIntoProgrammer(cue)" disabled="@EditingDisabled" title="Load cue values into the Programmer for editing">In Programmer</button>
                     <button type="button" class="btn btn-outline-primary btn-sm" @onclick="() => NewCue(mCuelist.Cues.FindIndex(c => c.Id == cue.Id) + 1)" disabled="@EditingDisabled">Insert after</button>
                     <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="() => DuplicateCue(cue)" disabled="@EditingDisabled">Duplicate</button>
                     <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="() => MoveCue(cue, -1)" disabled="@(EditingDisabled || mCuelist.Cues[0].Id == cue.Id)" aria-label="Move cue up">↑</button>
@@ -248,6 +251,12 @@ else
     {
         mEditingCue = pCue.Clone();
         mError = null;
+    }
+
+    private void LoadCueIntoProgrammer(Cue pCue)
+    {
+        ProgrammerService.LoadCue(pCue);
+        NavigationManager.NavigateTo("programmer");
     }
 
     private void CancelEdit() => mEditingCue = null;

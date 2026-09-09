@@ -1,0 +1,174 @@
+@using DmxControlUtilities.Lib.Models
+@using DmxControlUtilities.Lib.Services
+@using MComponents.MSelect
+
+@inject CuelistService CuelistService
+
+<div style="min-width: 320px;">
+    @if (mCuelists.Count == 0)
+    {
+        <div class="alert alert-warning">No cuelists exist yet. Please create a cuelist first.</div>
+    }
+    else
+    {
+        @if (mError != null)
+        {
+            <div class="alert alert-danger">@mError</div>
+        }
+
+        <div class="mb-3">
+            <label class="form-label">Target Cuelist</label>
+            <MSelect @bind-Value="mSelectedCuelist"
+                     @bind-Value:after="OnCuelistChanged"
+                     Options="mCuelists"
+                     Property="@nameof(Cuelist.Name)"
+                     EnableSearch="true" />
+        </div>
+
+        <div class="mb-3">
+            <label class="form-label">Storage Target</label>
+            <div>
+                <div class="form-check form-check-inline">
+                    <input class="form-check-input" type="radio" id="targetNew" name="targetMode"
+                           checked="@(!mUpdateExisting)" @onchange="() => SetMode(false)" />
+                    <label class="form-check-label" for="targetNew">New Cue</label>
+                </div>
+                <div class="form-check form-check-inline">
+                    <input class="form-check-input" type="radio" id="targetExisting" name="targetMode"
+                           checked="@mUpdateExisting" @onchange="() => SetMode(true)"
+                           disabled="@(mCues.Count == 0)" />
+                    <label class="form-check-label" for="targetExisting">Overwrite Existing Cue</label>
+                </div>
+            </div>
+        </div>
+
+        @if (mUpdateExisting && mCues.Count > 0)
+        {
+            <div class="mb-3">
+                <label class="form-label">Select Cue to overwrite</label>
+                <MSelect @bind-Value="mSelectedCue"
+                         @bind-Value:after="OnExistingCueSelected"
+                         Options="mCues"
+                         Property="@nameof(Cue.Name)"
+                         EnableSearch="true" />
+            </div>
+        }
+
+        <div class="mb-3">
+            <label class="form-label">Cue Name</label>
+            <input type="text" class="form-control" @bind="mCueName" />
+        </div>
+
+        <p class="small text-muted">
+            Programmer staged values (@(ProgrammerValues.Values.Sum(v => v.Count)) features across @ProgrammerValues.Count devices) will be written into the selected cue.
+        </p>
+
+        <div class="d-flex gap-2">
+            <button type="button" class="btn btn-primary" @onclick="Confirm"
+                    disabled="@(mSelectedCuelist == null || string.IsNullOrWhiteSpace(mCueName))">
+                Store
+            </button>
+            <button type="button" class="btn btn-secondary" @onclick="Cancel">Cancel</button>
+        </div>
+    }
+</div>
+
+@code {
+    [CascadingParameter]
+    public BlazoredModalInstance Modal { get; set; } = null!;
+
+    [Parameter]
+    public Dictionary<Guid, Dictionary<string, CueFeatureValue>> ProgrammerValues { get; set; } = new();
+
+    [Parameter]
+    public EventCallback OnStored { get; set; }
+
+    private IReadOnlyList<Cuelist> mCuelists = Array.Empty<Cuelist>();
+    private Cuelist? mSelectedCuelist;
+    private IReadOnlyList<Cue> mCues = Array.Empty<Cue>();
+    private Cue? mSelectedCue;
+    private bool mUpdateExisting;
+    private string mCueName = "Cue";
+    private string? mError;
+
+    protected override void OnInitialized()
+    {
+        mCuelists = CuelistService.Cuelists;
+        mSelectedCuelist = mCuelists.FirstOrDefault();
+        UpdateCuesForSelectedCuelist();
+        if (!mUpdateExisting)
+        {
+            mCueName = $"Cue {(mCues.Count + 1)}";
+        }
+    }
+
+    private void SetMode(bool pUpdateExisting)
+    {
+        mUpdateExisting = pUpdateExisting;
+        if (mUpdateExisting && mSelectedCue != null)
+        {
+            mCueName = mSelectedCue.Name;
+        }
+        else if (!mUpdateExisting && mSelectedCuelist != null)
+        {
+            mCueName = $"Cue {(mCues.Count + 1)}";
+        }
+    }
+
+    private void OnCuelistChanged()
+    {
+        UpdateCuesForSelectedCuelist();
+        if (!mUpdateExisting && mSelectedCuelist != null)
+        {
+            mCueName = $"Cue {(mCues.Count + 1)}";
+        }
+    }
+
+    private void UpdateCuesForSelectedCuelist()
+    {
+        if (mSelectedCuelist != null)
+        {
+            var fresh = CuelistService.GetCuelist(mSelectedCuelist.Id);
+            mCues = fresh?.Cues ?? (IReadOnlyList<Cue>)Array.Empty<Cue>();
+            mSelectedCue = mCues.FirstOrDefault();
+            if (mUpdateExisting && mSelectedCue != null)
+                mCueName = mSelectedCue.Name;
+        }
+        else
+        {
+            mCues = Array.Empty<Cue>();
+            mSelectedCue = null;
+        }
+    }
+
+    private void OnExistingCueSelected()
+    {
+        if (mSelectedCue != null)
+            mCueName = mSelectedCue.Name;
+    }
+
+    private async Task Confirm()
+    {
+        if (mSelectedCuelist == null || string.IsNullOrWhiteSpace(mCueName))
+            return;
+
+        try
+        {
+            Guid? targetCueId = mUpdateExisting ? mSelectedCue?.Id : null;
+            CuelistService.StoreProgrammerIntoCue(mSelectedCuelist.Id, targetCueId, mCueName, ProgrammerValues);
+
+            await Modal.CloseAsync();
+            if (OnStored.HasDelegate)
+                await OnStored.InvokeAsync();
+        }
+        catch (Exception ex)
+        {
+            mError = ex.Message;
+        }
+    }
+
+    private async Task Cancel()
+    {
+        await Modal.CancelAsync();
+    }
+}

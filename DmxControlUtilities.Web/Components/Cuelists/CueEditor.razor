@@ -1,11 +1,13 @@
 @using DmxControlUtilities.Lib.Models
 @using DmxControlUtilities.Lib.Services
+@using DmxControlUtilities.Lib.Services.Hal
 @using MComponents.MForm
 @using MComponents.MGrid
 @using MComponents.MSelect
 
 @inject CuelistService CuelistService
 @inject DeviceService DeviceService
+@inject ProgrammerService ProgrammerService
 
 <div class="card mt-3">
     <div class="card-body">
@@ -38,13 +40,20 @@
         </p>
 
         <div class="mb-3">
-            <label class="form-label">Devices to capture</label>
+            <label class="form-label">Capture source</label>
+            <div class="d-flex flex-wrap gap-2 mb-2">
+                <button type="button" class="btn btn-outline-success btn-sm" @onclick="CaptureFromProgrammer"
+                        disabled="@(!ProgrammerService.HasValues)">
+                    Store values from Programmer (@ProgrammerCount values)
+                </button>
+            </div>
+            <label class="form-label">Devices to capture from device controls</label>
             <MSelect T="Device" Options="mDevices" @bind-Values="mSelectedDevices"
                      Property="@nameof(Device.Name)" EnableSearch="true" EnableSelectAll="true" />
             <button type="button" class="btn btn-outline-primary btn-sm mt-2" @onclick="Capture"
                     disabled="@(mSelectedDevices.Count == 0)">Replace captured values from device controls</button>
             <p class="small text-muted mt-1">
-                Captures device-control values, not mixed cuelist output. Stop overlapping cuelists to preview device controls.
+                Use "Store values from Programmer" for staged values, or capture directly from device controls.
             </p>
         </div>
 
@@ -58,16 +67,16 @@
             <MGrid T="CueValueRow" DataSource="mValues" EnableAdding="false" EnableEditing="false" EnableDeleting="false"
                    EnableFilterRow="false" EnableGrouping="false" EnableExport="false" EnableImport="false" EnableSaveState="false">
                 <MGridColumn Property="@nameof(CueValueRow.DeviceName)" HeaderText="Device" PropertyType="typeof(string)" />
-                <MGridColumn Property="@nameof(CueValueRow.FunctionName)" HeaderText="Function" PropertyType="typeof(string)" />
-                <MGridComplexColumn T="CueValueRow" Identifier="Value" HeaderText="DMX value (0–255)">
+                <MGridColumn Property="@nameof(CueValueRow.FeatureName)" HeaderText="Feature" PropertyType="typeof(string)" />
+                <MGridComplexColumn T="CueValueRow" Identifier="Value" HeaderText="Value">
                     <CellTemplate Context="value">
-                        <input type="number" min="0" max="255" step="1"
+                        <input type="text"
                                class="form-control form-control-sm @(value.IsValid ? "" : "is-invalid")"
-                               aria-label="@($"{value.DeviceName}: {value.FunctionName}")"
+                               aria-label="@($"{value.DeviceName}: {value.FeatureName}")"
                                @bind="value.Text" @bind:event="oninput" />
                         @if (!value.IsValid)
                         {
-                            <span class="invalid-feedback">Enter a whole number from 0 to 255.</span>
+                            <span class="invalid-feedback">@value.FormatHint</span>
                         }
                     </CellTemplate>
                 </MGridComplexColumn>
@@ -112,6 +121,19 @@
         RefreshValues();
     }
 
+    private int ProgrammerCount => ProgrammerService.ValueCount;
+
+    private void CaptureFromProgrammer()
+    {
+        var values = ProgrammerService.CreateCueValues();
+        if (values.Count > 0)
+        {
+            mCue.DeviceValues = values;
+            mError = null;
+            RefreshValues();
+        }
+    }
+
     private void Capture()
     {
         try
@@ -133,7 +155,6 @@
         foreach (var captured in mCue.DeviceValues)
         {
             var device = DeviceService.GetDevice(captured.Key);
-            var description = device != null ? DeviceService.GetDescription(device) : null;
 
             foreach (var value in captured.Value)
             {
@@ -141,13 +162,27 @@
                 {
                     DeviceId = captured.Key,
                     DeviceName = device?.Name ?? $"Missing device ({captured.Key})",
-                    Key = value.Key,
-                    FunctionName = description?.GetFunction(value.Key)?.Name ?? value.Key,
-                    Text = value.Value.ToString()
+                    Feature = value.Key,
+                    FeatureName = value.Value.Name,
+                    Kind = value.Value.Kind,
+                    Text = ToText(value.Value)
                 });
             }
         }
     }
+
+    private static string ToText(CueFeatureValue pValue)
+    {
+        return pValue switch
+        {
+            ColorCueValue color => $"#{color.R:x2}{color.G:x2}{color.B:x2}",
+            PositionCueValue position => $"{Percent(position.Pan)}, {Percent(position.Tilt)}",
+            ScalarCueValue scalar => Percent(scalar.Value).ToString(),
+            _ => pValue.ToDisplayString(),
+        };
+    }
+
+    private static int Percent(double pValue) => (int)Math.Round(Math.Clamp(pValue, 0, 1) * 100);
 
     private async Task Submit()
     {
@@ -159,12 +194,15 @@
     {
         if (mValues.Any(v => !v.IsValid))
         {
-            mError = "All DMX values must be whole numbers from 0 to 255.";
+            mError = "All captured values must match their format (see hints).";
             return;
         }
 
         foreach (var value in mValues)
-            mCue.DeviceValues[value.DeviceId][value.Key] = byte.Parse(value.Text);
+        {
+            var current = mCue.DeviceValues[value.DeviceId][value.Feature];
+            mCue.DeviceValues[value.DeviceId][value.Feature] = value.Parse(current);
+        }
 
         await OnSave.InvokeAsync(mCue.Clone());
     }
@@ -173,9 +211,68 @@
     {
         public Guid DeviceId { get; set; }
         public string DeviceName { get; set; } = string.Empty;
-        public string Key { get; set; } = string.Empty;
-        public string FunctionName { get; set; } = string.Empty;
+        public string Feature { get; set; } = string.Empty;
+        public string FeatureName { get; set; } = string.Empty;
+        public CueFeatureValueKind Kind { get; set; }
         public string Text { get; set; } = string.Empty;
-        public bool IsValid => byte.TryParse(Text, out _);
+
+        public bool IsValid => TryParse(out _);
+
+        public string FormatHint => Kind switch
+        {
+            CueFeatureValueKind.Color => "Enter a color as #rrggbb.",
+            CueFeatureValueKind.Position => "Enter pan and tilt as percent, e.g. '50, 75'.",
+            _ => "Enter a percentage from 0 to 100.",
+        };
+
+        public CueFeatureValue Parse(CueFeatureValue pTemplate)
+        {
+            switch (pTemplate)
+            {
+                case ColorCueValue color when HalColor.FromHex(Text) is { } rgb:
+                    return new ColorCueValue { Feature = color.Feature, Name = color.Name, R = rgb.R, G = rgb.G, B = rgb.B };
+
+                case PositionCueValue position:
+                {
+                    var parts = Text.Split(',', StringSplitOptions.TrimEntries);
+                    if (parts.Length == 2
+                        && int.TryParse(parts[0], out int pan) && pan is >= 0 and <= 100
+                        && int.TryParse(parts[1], out int tilt) && tilt is >= 0 and <= 100)
+                    {
+                        return new PositionCueValue { Feature = position.Feature, Name = position.Name, Pan = pan / 100.0, Tilt = tilt / 100.0 };
+                    }
+                    return position;
+                }
+
+                case ScalarCueValue scalar
+                    when int.TryParse(Text, out int percent) && percent is >= 0 and <= 100:
+                    return new ScalarCueValue { Feature = scalar.Feature, Name = scalar.Name, IsDiscrete = scalar.IsDiscrete, Value = percent / 100.0 };
+
+                default:
+                    return pTemplate;
+            }
+        }
+
+        private bool TryParse(out CueFeatureValue? pValue)
+        {
+            pValue = null;
+
+            switch (Kind)
+            {
+                case CueFeatureValueKind.Color:
+                    return HalColor.FromHex(Text) != null;
+
+                case CueFeatureValueKind.Position:
+                {
+                    var parts = Text.Split(',', StringSplitOptions.TrimEntries);
+                    return parts.Length == 2
+                        && int.TryParse(parts[0], out int pan) && pan is >= 0 and <= 100
+                        && int.TryParse(parts[1], out int tilt) && tilt is >= 0 and <= 100;
+                }
+
+                default:
+                    return int.TryParse(Text, out int percent) && percent is >= 0 and <= 100;
+            }
+        }
     }
 }

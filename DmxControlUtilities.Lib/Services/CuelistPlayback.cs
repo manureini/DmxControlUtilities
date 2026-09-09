@@ -2,12 +2,16 @@ using DmxControlUtilities.Lib.Models;
 
 namespace DmxControlUtilities.Lib.Services
 {
+    /// <summary>
+    /// Runtime playback state of a single cuelist. Fades interpolate typed HAL feature values
+    /// (color crossfade in RGB, pan/tilt lerp, scalar lerp); discrete (step) features snap to
+    /// the target when the fade completes.
+    /// </summary>
     internal sealed class CuelistPlayback
     {
-        private static readonly string[] mResolutionSuffixes = { "", "/fine", "/ultra", "/ultrafine" };
         private readonly Cuelist mCuelist;
         private readonly DeviceService mDeviceService;
-        private readonly List<ChannelFade> mFades = new();
+        private readonly List<FeatureFade> mFades = new();
         private TimeSpan mCueTriggeredAt;
         private TimeSpan? mPausedAt;
         private bool mFadeStarted;
@@ -22,14 +26,19 @@ namespace DmxControlUtilities.Lib.Services
         public int CurrentCueIndex { get; private set; } = -1;
         public TimeSpan ActivatedAt { get; private set; }
         public long ActivationOrder { get; private set; }
-        public Dictionary<Guid, Dictionary<string, byte>> Values { get; private set; } = new();
+
+        /// <summary>
+        /// Current output of this playback: device id -> (feature key -> typed value).
+        /// </summary>
+        public Dictionary<Guid, Dictionary<string, CueFeatureValue>> Values { get; private set; } = new();
+
         public bool IsPaused => mPausedAt.HasValue;
 
         private Cue CurrentCue => mCuelist.Cues[CurrentCueIndex];
         private TimeSpan FadeStartsAt => mCueTriggeredAt + TimeSpan.FromMilliseconds(CurrentCue.DelayMilliseconds);
         private TimeSpan FadeEndsAt => FadeStartsAt + TimeSpan.FromMilliseconds(CurrentCue.FadeMilliseconds);
 
-        public void Go(TimeSpan pNow, Func<Guid, string, byte> pReadOutput, Func<long> pNextOrder)
+        public void Go(TimeSpan pNow, Func<Guid, string, CueFeatureValue?> pReadOutput, Func<long> pNextOrder)
         {
             if (IsPaused)
             {
@@ -45,7 +54,7 @@ namespace DmxControlUtilities.Lib.Services
             UpdateValues(pNow, pReadOutput, pNextOrder);
         }
 
-        public void Back(TimeSpan pNow, Func<Guid, string, byte> pReadOutput, Func<long> pNextOrder)
+        public void Back(TimeSpan pNow, Func<Guid, string, CueFeatureValue?> pReadOutput, Func<long> pNextOrder)
         {
             int index = CurrentCueIndex - 1;
             if (index < 0)
@@ -70,7 +79,7 @@ namespace DmxControlUtilities.Lib.Services
             mPausedAt = null;
         }
 
-        public void Update(TimeSpan pNow, Func<Guid, string, byte> pReadOutput, Func<long> pNextOrder)
+        public void Update(TimeSpan pNow, Func<Guid, string, CueFeatureValue?> pReadOutput, Func<long> pNextOrder)
         {
             if (IsPaused || CurrentCueIndex < 0)
                 return;
@@ -149,7 +158,7 @@ namespace DmxControlUtilities.Lib.Services
             mFades.Clear();
         }
 
-        private void UpdateValues(TimeSpan pNow, Func<Guid, string, byte> pReadOutput, Func<long> pNextOrder)
+        private void UpdateValues(TimeSpan pNow, Func<Guid, string, CueFeatureValue?> pReadOutput, Func<long> pNextOrder)
         {
             if (pNow < FadeStartsAt || mFadeCompleted)
                 return;
@@ -163,25 +172,15 @@ namespace DmxControlUtilities.Lib.Services
 
             foreach (var fade in mFades)
             {
-                long value = fade.IsDiscrete && progress < 1
-                    ? fade.From
-                    : (long)Math.Round(fade.From + (fade.To - fade.From) * progress, MidpointRounding.AwayFromZero);
-
-                for (int i = fade.Keys.Length - 1; i >= 0; i--)
-                {
-                    if (fade.Keys[i] is string key)
-                        Values[fade.DeviceId][key] = (byte)(value & 255);
-
-                    value >>= 8;
-                }
+                Values[fade.DeviceId][fade.Feature] = CueFeatureValue.Lerp(fade.From, fade.To, progress);
             }
 
             mFadeCompleted = progress >= 1;
         }
 
-        private void BeginFade(Func<Guid, string, byte> pReadOutput, Func<long> pNextOrder)
+        private void BeginFade(Func<Guid, string, CueFeatureValue?> pReadOutput, Func<long> pNextOrder)
         {
-            var targets = new Dictionary<Guid, Dictionary<string, byte>>();
+            var targets = new Dictionary<Guid, Dictionary<string, CueFeatureValue>>();
 
             // Reconstruct tracking from the beginning so Back and looping release later-only values.
             foreach (var cue in mCuelist.Cues.Take(CurrentCueIndex + 1))
@@ -189,44 +188,30 @@ namespace DmxControlUtilities.Lib.Services
                 foreach (var device in cue.DeviceValues)
                 {
                     if (!targets.TryGetValue(device.Key, out var values))
-                        targets[device.Key] = values = new Dictionary<string, byte>();
+                        targets[device.Key] = values = new Dictionary<string, CueFeatureValue>();
 
                     foreach (var value in device.Value)
                         values[value.Key] = value.Value;
                 }
             }
 
-            var starts = targets.ToDictionary(d => d.Key,
-                d => d.Value.Keys.ToDictionary(k => k, k => pReadOutput(d.Key, k)));
+            // Fade start: the current output of the whole system for that feature (device controls,
+            // other cuelists) or, when the feature is untouched there, the previous tracked target.
+            var starts = new Dictionary<Guid, Dictionary<string, CueFeatureValue>>();
 
-            foreach (var device in targets)
+            foreach (var (deviceId, features) in targets)
             {
-                var configuredDevice = mDeviceService.GetDevice(device.Key);
-                var description = configuredDevice != null ? mDeviceService.GetDescription(configuredDevice) : null;
+                var startsForDevice = new Dictionary<string, CueFeatureValue>();
 
-                foreach (var target in device.Value)
+                foreach (var (featureKey, target) in features)
                 {
-                    if (mResolutionSuffixes.Skip(1).Any(s => target.Key.EndsWith(s, StringComparison.Ordinal)
-                        && device.Value.ContainsKey(target.Key[..^s.Length])))
-                        continue;
+                    var from = pReadOutput(deviceId, featureKey) ?? target.Clone();
+                    startsForDevice[featureKey] = from;
 
-                    int resolution = Array.FindLastIndex(mResolutionSuffixes, s => device.Value.ContainsKey(target.Key + s));
-                    var keys = new string?[resolution + 1];
-                    long from = 0;
-                    long to = 0;
-
-                    // Fade a 16/24/32-bit function as one number, not as independent DMX bytes.
-                    for (int i = 0; i <= resolution; i++)
-                    {
-                        string key = target.Key + mResolutionSuffixes[i];
-                        keys[i] = device.Value.ContainsKey(key) ? key : null;
-                        from = (from << 8) | starts[device.Key].GetValueOrDefault(key);
-                        to = (to << 8) | device.Value.GetValueOrDefault(key);
-                    }
-
-                    mFades.Add(new ChannelFade(device.Key, keys, from, to,
-                        description?.GetFunction(target.Key)?.Steps.Count > 0));
+                    mFades.Add(new FeatureFade(deviceId, featureKey, from, target));
                 }
+
+                starts[deviceId] = startsForDevice;
             }
 
             Values = starts;
@@ -235,6 +220,6 @@ namespace DmxControlUtilities.Lib.Services
             mFadeStarted = true;
         }
 
-        private sealed record ChannelFade(Guid DeviceId, string?[] Keys, long From, long To, bool IsDiscrete);
+        private sealed record FeatureFade(Guid DeviceId, string Feature, CueFeatureValue From, CueFeatureValue To);
     }
 }

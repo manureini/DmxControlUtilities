@@ -1,5 +1,6 @@
 using DmxControlUtilities.Lib.Models;
 using DmxControlUtilities.Lib.Models.Ddf;
+using DmxControlUtilities.Lib.Services.Hal;
 
 namespace DmxControlUtilities.Lib.Services
 {
@@ -13,6 +14,7 @@ namespace DmxControlUtilities.Lib.Services
         private readonly List<Device> mDevices = new();
         private readonly object mLock = new();
         private Dictionary<Guid, Dictionary<string, byte>> mPlaybackValues = new();
+        private Dictionary<Guid, Dictionary<string, byte>> mProgrammerValues = new();
 
         public DeviceService(DmxFtdiService pDmxService, DeviceDescriptionService pDescriptionService)
         {
@@ -102,6 +104,7 @@ namespace DmxControlUtilities.Lib.Services
 
             var controlValues = pDevice.GetValuesSnapshot();
             mPlaybackValues.TryGetValue(pDevice.Id, out var playbackValues);
+            mProgrammerValues.TryGetValue(pDevice.Id, out var programmerValues);
 
             foreach (var function in description.Functions)
             {
@@ -110,9 +113,13 @@ namespace DmxControlUtilities.Lib.Services
                 if (channel < 1 || channel > 512)
                     continue;
 
-                byte value = playbackValues != null && playbackValues.TryGetValue(function.Key, out var playbackValue)
-                    ? playbackValue
-                    : controlValues.GetValueOrDefault(function.Key);
+                byte value = controlValues.GetValueOrDefault(function.Key);
+
+                if (playbackValues != null && playbackValues.TryGetValue(function.Key, out var playbackValue))
+                    value = playbackValue;
+
+                if (programmerValues != null && programmerValues.TryGetValue(function.Key, out var programmerValue))
+                    value = programmerValue;
 
                 mDmxService.SetChannel(channel, value);
             }
@@ -120,10 +127,94 @@ namespace DmxControlUtilities.Lib.Services
 
         internal void SetPlaybackValues(IReadOnlyDictionary<Guid, Dictionary<string, byte>> pValues)
         {
+            SetOutputLayer(pValues, ref mPlaybackValues);
+        }
+
+        internal void SetProgrammerValues(IReadOnlyDictionary<Guid, Dictionary<string, byte>> pValues)
+        {
+            SetOutputLayer(pValues, ref mProgrammerValues);
+        }
+
+        /// <summary>
+        /// Replaces the cuelist playback layer with the channel rendering of the given typed HAL
+        /// feature values. Each feature is applied through the HAL onto the device's current base
+        /// control values, so composite features (color, 16-bit position) resolve to all of their
+        /// DDF channels atomically.
+        /// </summary>
+        internal void SetPlaybackFeatures(IReadOnlyDictionary<Guid, Dictionary<string, CueFeatureValue>> pValues, HalService pHal)
+        {
+            SetOutputLayer(RenderFeatures(pValues, pHal), ref mPlaybackValues);
+        }
+
+        /// <summary>
+        /// Replaces the programmer layer with the channel rendering of the given typed HAL feature
+        /// values. See <see cref="SetPlaybackFeatures"/> for the rendering rules.
+        /// </summary>
+        internal void SetProgrammerFeatures(IReadOnlyDictionary<Guid, Dictionary<string, CueFeatureValue>> pValues, HalService pHal)
+        {
+            SetOutputLayer(RenderFeatures(pValues, pHal), ref mProgrammerValues);
+        }
+
+        private Dictionary<Guid, Dictionary<string, byte>> RenderFeatures(
+            IReadOnlyDictionary<Guid, Dictionary<string, CueFeatureValue>> pValues, HalService pHal)
+        {
             lock (mLock)
             {
-                var affectedDevices = mPlaybackValues.Keys.Union(pValues.Keys).ToHashSet();
-                mPlaybackValues = pValues.ToDictionary(d => d.Key, d => new Dictionary<string, byte>(d.Value));
+                var rendered = new Dictionary<Guid, Dictionary<string, byte>>();
+
+                foreach (var (deviceId, features) in pValues)
+                {
+                    var device = mDevices.FirstOrDefault(d => d.Id == deviceId);
+
+                    if (device == null || features.Count == 0)
+                        continue;
+
+                    // Seed a temp device with the base control values so feature application
+                    // (e.g. virtual dimmer scaling the current color) starts from the base state.
+                    var temp = new Device
+                    {
+                        Id = device.Id,
+                        Name = device.Name,
+                        Channel = device.Channel,
+                        DescriptionId = device.DescriptionId,
+                    };
+
+                    foreach (var (k, v) in device.GetValuesSnapshot())
+                    {
+                        temp.SetValue(k, v);
+                    }
+
+                    // Color before other features: virtual dimmer must scale the staged color.
+                    foreach (var value in features.Values.OrderBy(v => v.Kind == CueFeatureValueKind.Color ? 0 : 1))
+                    {
+                        value.Apply(temp, pHal);
+                    }
+
+                    var baseSnapshot = device.GetValuesSnapshot();
+                    var tempSnapshot = temp.GetValuesSnapshot();
+                    var channels = new Dictionary<string, byte>();
+
+                    foreach (var (k, v) in tempSnapshot)
+                    {
+                        if (v != baseSnapshot.GetValueOrDefault(k))
+                            channels[k] = v;
+                    }
+
+                    if (channels.Count > 0)
+                        rendered[deviceId] = channels;
+                }
+
+                return rendered;
+            }
+        }
+
+        private void SetOutputLayer(IReadOnlyDictionary<Guid, Dictionary<string, byte>> pValues,
+            ref Dictionary<Guid, Dictionary<string, byte>> pLayer)
+        {
+            lock (mLock)
+            {
+                var affectedDevices = pLayer.Keys.Union(pValues.Keys).ToHashSet();
+                pLayer = pValues.ToDictionary(d => d.Key, d => new Dictionary<string, byte>(d.Value));
 
                 foreach (var device in mDevices.Where(d => affectedDevices.Contains(d.Id)))
                 {

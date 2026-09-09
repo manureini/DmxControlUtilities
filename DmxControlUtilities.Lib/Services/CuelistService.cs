@@ -1,4 +1,5 @@
 using DmxControlUtilities.Lib.Models;
+using DmxControlUtilities.Lib.Services.Hal;
 using System.ComponentModel.DataAnnotations;
 
 namespace DmxControlUtilities.Lib.Services
@@ -6,6 +7,7 @@ namespace DmxControlUtilities.Lib.Services
     public class CuelistService
     {
         private readonly DeviceService mDeviceService;
+        private readonly HalService mHalService;
         private readonly TimeProvider mTimeProvider;
         private readonly long mStartedAt;
         private readonly object mLock = new();
@@ -13,9 +15,10 @@ namespace DmxControlUtilities.Lib.Services
         private readonly Dictionary<Guid, CuelistPlayback> mPlaybacks = new();
         private long mActivationOrder;
 
-        public CuelistService(DeviceService pDeviceService, TimeProvider? pTimeProvider = null)
+        public CuelistService(DeviceService pDeviceService, HalService pHalService, TimeProvider? pTimeProvider = null)
         {
             mDeviceService = pDeviceService;
+            mHalService = pHalService;
             mTimeProvider = pTimeProvider ?? TimeProvider.System;
             mStartedAt = mTimeProvider.GetTimestamp();
         }
@@ -38,6 +41,62 @@ namespace DmxControlUtilities.Lib.Services
             lock (mLock)
             {
                 return mCuelists.GetValueOrDefault(pId)?.Clone();
+            }
+        }
+
+        public (Cuelist Cuelist, Cue Cue)? GetCue(Guid pCueId)
+        {
+            lock (mLock)
+            {
+                foreach (var list in mCuelists.Values)
+                {
+                    var cue = list.Cues.FirstOrDefault(c => c.Id == pCueId);
+                    if (cue != null)
+                        return (list.Clone(), cue.Clone());
+                }
+                return null;
+            }
+        }
+
+        public void StoreProgrammerIntoCue(Guid pCuelistId, Guid? pCueId, string pCueName, Dictionary<Guid, Dictionary<string, CueFeatureValue>> pProgrammerValues)
+        {
+            lock (mLock)
+            {
+                if (!mCuelists.TryGetValue(pCuelistId, out var cuelist))
+                    throw new InvalidOperationException("Cuelist not found.");
+
+                if (mPlaybacks.ContainsKey(pCuelistId))
+                    throw new InvalidOperationException("Stop this cuelist before editing it.");
+
+                var updated = cuelist.Clone();
+
+                Dictionary<string, CueFeatureValue> CopyFeatures(Dictionary<string, CueFeatureValue> pFeatures)
+                {
+                    return pFeatures.ToDictionary(f => f.Key, f => f.Value.Clone());
+                }
+
+                if (pCueId.HasValue)
+                {
+                    int index = updated.Cues.FindIndex(c => c.Id == pCueId.Value);
+                    if (index < 0)
+                        throw new InvalidOperationException("Cue not found in cuelist.");
+
+                    var targetCue = updated.Cues[index];
+                    targetCue.Name = pCueName;
+                    targetCue.DeviceValues = pProgrammerValues.ToDictionary(d => d.Key, d => CopyFeatures(d.Value));
+                }
+                else
+                {
+                    var newCue = new Cue
+                    {
+                        Name = pCueName,
+                        DeviceValues = pProgrammerValues.ToDictionary(d => d.Key, d => CopyFeatures(d.Value))
+                    };
+                    updated.Cues.Add(newCue);
+                }
+
+                Validate(updated);
+                mCuelists[pCuelistId] = updated;
             }
         }
 
@@ -93,8 +152,18 @@ namespace DmxControlUtilities.Lib.Services
                     continue;
 
                 var values = device.GetValuesSnapshot();
-                cue.DeviceValues[id] = description.Functions.ToDictionary(f => f.Key,
-                    f => values.GetValueOrDefault(f.Key, f.DefaultValue));
+                var features = new Dictionary<string, CueFeatureValue>();
+
+                foreach (var feature in mHalService.GetFeatures(device))
+                {
+                    var value = CueFeatureValue.FromDeviceValues(description, feature, values);
+
+                    if (value != null)
+                        features[feature.Feature] = value;
+                }
+
+                if (features.Count > 0)
+                    cue.DeviceValues[id] = features;
             }
 
             if (cue.DeviceValues.Count == 0)
@@ -218,15 +287,15 @@ namespace DmxControlUtilities.Lib.Services
 
         private long NextOrder() => ++mActivationOrder;
 
-        private byte ReadOutput(Guid pDeviceId, string pKey)
+        private CueFeatureValue? ReadOutput(Guid pDeviceId, string pFeature)
         {
-            byte value = mDeviceService.GetDevice(pDeviceId)?.GetValue(pKey) ?? 0;
+            CueFeatureValue? value = null;
             TimeSpan latest = TimeSpan.MinValue;
             long order = -1;
 
             foreach (var playback in mPlaybacks.Values)
             {
-                if (playback.Values.TryGetValue(pDeviceId, out var values) && values.TryGetValue(pKey, out var candidate)
+                if (playback.Values.TryGetValue(pDeviceId, out var values) && values.TryGetValue(pFeature, out var candidate)
                     && (playback.ActivatedAt > latest || (playback.ActivatedAt == latest && playback.ActivationOrder > order)))
                 {
                     value = candidate;
@@ -235,12 +304,27 @@ namespace DmxControlUtilities.Lib.Services
                 }
             }
 
-            return value;
+            if (value != null)
+                return value;
+
+            // Fall back to the device's current base control values, read through the HAL feature.
+            var device = mDeviceService.GetDevice(pDeviceId);
+            var description = device != null ? mDeviceService.GetDescription(device) : null;
+
+            if (device == null || description == null)
+                return null;
+
+            var halFeature = mHalService.GetFeatures(device).FirstOrDefault(f => f.Feature == pFeature);
+
+            if (halFeature == null)
+                return null;
+
+            return CueFeatureValue.FromDeviceValues(description, halFeature, device.GetValuesSnapshot());
         }
 
         private void RenderOutput()
         {
-            var output = new Dictionary<Guid, Dictionary<string, byte>>();
+            var output = new Dictionary<Guid, Dictionary<string, CueFeatureValue>>();
 
             foreach (var playback in mPlaybacks.Values.OrderBy(p => p.ActivatedAt).ThenBy(p => p.ActivationOrder))
             {
@@ -250,14 +334,14 @@ namespace DmxControlUtilities.Lib.Services
                         continue;
 
                     if (!output.TryGetValue(device.Key, out var values))
-                        output[device.Key] = values = new Dictionary<string, byte>();
+                        output[device.Key] = values = new Dictionary<string, CueFeatureValue>();
 
                     foreach (var value in device.Value)
                         values[value.Key] = value.Value;
                 }
             }
 
-            mDeviceService.SetPlaybackValues(output);
+            mDeviceService.SetPlaybackFeatures(output, mHalService);
         }
 
         private static void Validate(Cuelist pCuelist)
@@ -284,7 +368,7 @@ namespace DmxControlUtilities.Lib.Services
 
                 if (cue.DeviceValues == null || cue.DeviceValues.Any(d => d.Key == Guid.Empty || d.Value == null
                     || d.Value.Keys.Any(string.IsNullOrWhiteSpace)))
-                    throw new ValidationException("Cue values must reference device IDs and function keys.");
+                    throw new ValidationException("Cue values must reference device IDs and feature keys.");
             }
         }
     }
