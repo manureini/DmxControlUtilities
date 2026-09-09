@@ -1,0 +1,181 @@
+@using DmxControlUtilities.Lib.Models
+@using DmxControlUtilities.Lib.Services
+@using MComponents.MForm
+@using MComponents.MGrid
+@using MComponents.MSelect
+
+@inject CuelistService CuelistService
+@inject DeviceService DeviceService
+
+<div class="card mt-3">
+    <div class="card-body">
+        <h5 class="card-title">Edit cue</h5>
+
+        @if (mError != null)
+        {
+            <div class="alert alert-danger" role="alert">@mError</div>
+        }
+
+        <MForm T="Cue" Model="mCue" @key="mCue" @ref="mForm" OnValidSubmit="Save">
+            <Fields>
+                <MField Property="@nameof(Cue.Name)" />
+                <MField Property="@nameof(Cue.Comment)" />
+                <MFieldRow>
+                    <MField Property="@nameof(Cue.Trigger)" />
+                    <MField Property="@nameof(Cue.TriggerMilliseconds)" min="0" />
+                </MFieldRow>
+                <MFieldRow>
+                    <MField Property="@nameof(Cue.DelayMilliseconds)" min="0" />
+                    <MField Property="@nameof(Cue.FadeMilliseconds)" min="0" />
+                </MFieldRow>
+            </Fields>
+        </MForm>
+
+        <p class="small text-muted">
+            Manual waits for Go. Follow waits for the preceding cue's delay and fade to finish,
+            then counts the trigger time. Wait counts from the preceding cue's trigger.
+            All times are in milliseconds; Manual ignores trigger time.
+        </p>
+
+        <div class="mb-3">
+            <label class="form-label">Devices to capture</label>
+            <MSelect T="Device" Options="mDevices" @bind-Values="mSelectedDevices"
+                     Property="@nameof(Device.Name)" EnableSearch="true" EnableSelectAll="true" />
+            <button type="button" class="btn btn-outline-primary btn-sm mt-2" @onclick="Capture"
+                    disabled="@(mSelectedDevices.Count == 0)">Replace captured values from device controls</button>
+            <p class="small text-muted mt-1">
+                Captures device-control values, not mixed cuelist output. Stop overlapping cuelists to preview device controls.
+            </p>
+        </div>
+
+        <h6>Captured values (@mValues.Count)</h6>
+        @if (mValues.Count == 0)
+        {
+            <p class="text-muted">No values captured. An empty cue changes timing only.</p>
+        }
+        else
+        {
+            <MGrid T="CueValueRow" DataSource="mValues" EnableAdding="false" EnableEditing="false" EnableDeleting="false"
+                   EnableFilterRow="false" EnableGrouping="false" EnableExport="false" EnableImport="false" EnableSaveState="false">
+                <MGridColumn Property="@nameof(CueValueRow.DeviceName)" HeaderText="Device" PropertyType="typeof(string)" />
+                <MGridColumn Property="@nameof(CueValueRow.FunctionName)" HeaderText="Function" PropertyType="typeof(string)" />
+                <MGridComplexColumn T="CueValueRow" Identifier="Value" HeaderText="DMX value (0–255)">
+                    <CellTemplate Context="value">
+                        <input type="number" min="0" max="255" step="1"
+                               class="form-control form-control-sm @(value.IsValid ? "" : "is-invalid")"
+                               aria-label="@($"{value.DeviceName}: {value.FunctionName}")"
+                               @bind="value.Text" @bind:event="oninput" />
+                        @if (!value.IsValid)
+                        {
+                            <span class="invalid-feedback">Enter a whole number from 0 to 255.</span>
+                        }
+                    </CellTemplate>
+                </MGridComplexColumn>
+            </MGrid>
+        }
+
+        <div class="d-flex gap-2 mt-3">
+            <button type="button" class="btn btn-primary" @onclick="Submit" disabled="@mValues.Any(v => !v.IsValid)">Save cue</button>
+            <button type="button" class="btn btn-secondary" @onclick="() => OnCancel.InvokeAsync()">Cancel</button>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired]
+    public Cue Model { get; set; } = null!;
+
+    [Parameter]
+    public EventCallback<Cue> OnSave { get; set; }
+
+    [Parameter]
+    public EventCallback OnCancel { get; set; }
+
+    private Cue? mSource;
+    private Cue mCue = new();
+    private MForm<Cue>? mForm;
+    private IReadOnlyList<Device> mDevices = Array.Empty<Device>();
+    private ICollection<Device> mSelectedDevices = new List<Device>();
+    private List<CueValueRow> mValues = new();
+    private string? mError;
+
+    protected override void OnParametersSet()
+    {
+        if (ReferenceEquals(mSource, Model))
+            return;
+
+        mSource = Model;
+        mCue = Model.Clone();
+        mDevices = DeviceService.Devices;
+        mSelectedDevices = mDevices.Where(d => mCue.DeviceValues.Count == 0 || mCue.DeviceValues.ContainsKey(d.Id)).ToList();
+        mError = null;
+        RefreshValues();
+    }
+
+    private void Capture()
+    {
+        try
+        {
+            mCue.DeviceValues = CuelistService.CaptureCue(mSelectedDevices.Select(d => d.Id), mCue.Name).DeviceValues;
+            mError = null;
+            RefreshValues();
+        }
+        catch (InvalidOperationException ex)
+        {
+            mError = ex.Message;
+        }
+    }
+
+    private void RefreshValues()
+    {
+        mValues = new List<CueValueRow>();
+
+        foreach (var captured in mCue.DeviceValues)
+        {
+            var device = DeviceService.GetDevice(captured.Key);
+            var description = device != null ? DeviceService.GetDescription(device) : null;
+
+            foreach (var value in captured.Value)
+            {
+                mValues.Add(new CueValueRow
+                {
+                    DeviceId = captured.Key,
+                    DeviceName = device?.Name ?? $"Missing device ({captured.Key})",
+                    Key = value.Key,
+                    FunctionName = description?.GetFunction(value.Key)?.Name ?? value.Key,
+                    Text = value.Value.ToString()
+                });
+            }
+        }
+    }
+
+    private async Task Submit()
+    {
+        if (mForm != null)
+            await mForm.CallLocalSubmit(true);
+    }
+
+    private async Task Save()
+    {
+        if (mValues.Any(v => !v.IsValid))
+        {
+            mError = "All DMX values must be whole numbers from 0 to 255.";
+            return;
+        }
+
+        foreach (var value in mValues)
+            mCue.DeviceValues[value.DeviceId][value.Key] = byte.Parse(value.Text);
+
+        await OnSave.InvokeAsync(mCue.Clone());
+    }
+
+    private sealed class CueValueRow
+    {
+        public Guid DeviceId { get; set; }
+        public string DeviceName { get; set; } = string.Empty;
+        public string Key { get; set; } = string.Empty;
+        public string FunctionName { get; set; } = string.Empty;
+        public string Text { get; set; } = string.Empty;
+        public bool IsValid => byte.TryParse(Text, out _);
+    }
+}

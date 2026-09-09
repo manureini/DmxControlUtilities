@@ -1,0 +1,305 @@
+@using System.ComponentModel.DataAnnotations
+@using DmxControlUtilities.Lib.Models
+@using DmxControlUtilities.Lib.Services
+@using MComponents.MForm
+@using MComponents.MGrid
+@implements IAsyncDisposable
+
+@inject CuelistService CuelistService
+
+@if (mCuelist == null)
+{
+    <p>Cuelist not found.</p>
+}
+else
+{
+    <h3>@mCuelist.Name</h3>
+
+    @if (mError != null)
+    {
+        <div class="alert alert-danger" role="alert">@mError</div>
+    }
+
+    <fieldset disabled="@mStatus.IsActive" class="mb-3">
+        <MForm T="Cuelist" Model="mCuelist" @key="mCuelist" @ref="mSettingsForm" OnValidSubmit="SaveSettings">
+            <Fields>
+                <MFieldRow>
+                    <MField Property="@nameof(Cuelist.Name)" />
+                    <MField Property="@nameof(Cuelist.Loop)" />
+                </MFieldRow>
+            </Fields>
+        </MForm>
+        <button type="button" class="btn btn-outline-primary btn-sm" @onclick="SubmitSettings">Save settings</button>
+    </fieldset>
+
+    <div class="d-flex flex-wrap gap-2 mb-3" role="group" aria-label="Cuelist playback">
+        <button type="button" class="btn btn-success" @onclick="Go" disabled="@(mCuelist.Cues.Count == 0 || mEditingCue != null)">
+            @(mStatus.State == CuelistPlaybackState.Paused ? "Resume / Go" : "Go")
+        </button>
+        <button type="button" class="btn btn-outline-primary" @onclick="Back" disabled="@(!mStatus.IsActive)">Go back</button>
+        <button type="button" class="btn btn-outline-secondary" @onclick="TogglePause" disabled="@(!mStatus.IsActive)">
+            @(mStatus.State == CuelistPlaybackState.Paused ? "Resume" : "Pause")
+        </button>
+        <button type="button" class="btn btn-danger" @onclick="Stop" disabled="@(!mStatus.IsActive)">Stop</button>
+    </div>
+
+    <div class="alert alert-secondary">
+        <strong>@mStatus.State</strong>
+        @if (mStatus.IsActive)
+        {
+            <span> — Cue @(mStatus.CurrentCueIndex + 1): @mStatus.CurrentCueName</span>
+            <span class="ms-3">Delay: @mStatus.RemainingDelayMilliseconds ms</span>
+            <span class="ms-3">Fade: @mStatus.RemainingFadeMilliseconds ms</span>
+            @if (mStatus.NextCueMilliseconds.HasValue)
+            {
+                <span class="ms-3">Next automatic cue: @mStatus.NextCueMilliseconds ms</span>
+            }
+            else
+            {
+                <span class="ms-3">Waiting for Go or Stop.</span>
+            }
+        }
+    </div>
+
+    <p class="small text-muted">
+        Stop this list before editing. Latest cue activation wins on overlapping output; Stop releases it to other lists or device controls.
+        With Loop off, the final cue is held until Stop. Playback continues when you leave this page.
+    </p>
+
+    <button type="button" class="btn btn-primary mb-2" @onclick="() => NewCue(mCuelist.Cues.Count)" disabled="@EditingDisabled">Add cue</button>
+
+    <MGrid T="Cue" DataSource="mCuelist.Cues" EnableAdding="false" EnableEditing="false" EnableDeleting="false"
+           EnableUserSorting="false" EnableFilterRow="false" EnableGrouping="false" EnableExport="false"
+           EnableImport="false" EnableSaveState="false" NoDataDescription="Add a cue, then capture device-control values.">
+        <MGridComplexColumn T="Cue" Identifier="Number" HeaderText="#">
+            <CellTemplate Context="cue">
+                <span>@(mCuelist.Cues.FindIndex(c => c.Id == cue.Id) + 1)</span>
+                @if (cue.Id == mStatus.CurrentCueId)
+                {
+                    <span class="badge bg-success ms-1">Active</span>
+                }
+            </CellTemplate>
+        </MGridComplexColumn>
+        <MGridColumn Property="@nameof(Cue.Name)" HeaderText="Name" PropertyType="typeof(string)" />
+        <MGridColumn Property="@nameof(Cue.Trigger)" HeaderText="Trigger" PropertyType="typeof(CueTrigger)" />
+        <MGridColumn Property="@nameof(Cue.TriggerMilliseconds)" HeaderText="Trigger (ms)" PropertyType="typeof(int)" />
+        <MGridColumn Property="@nameof(Cue.DelayMilliseconds)" HeaderText="Delay (ms)" PropertyType="typeof(int)" />
+        <MGridColumn Property="@nameof(Cue.FadeMilliseconds)" HeaderText="Fade (ms)" PropertyType="typeof(int)" />
+        <MGridColumn Property="@nameof(Cue.Comment)" HeaderText="Comment" PropertyType="typeof(string)" />
+        <MGridComplexColumn T="Cue" Identifier="Actions" HeaderText="Actions">
+            <CellTemplate Context="cue">
+                <div class="d-flex flex-wrap gap-1">
+                    <button type="button" class="btn btn-primary btn-sm" @onclick="() => EditCue(cue)" disabled="@EditingDisabled">Edit</button>
+                    <button type="button" class="btn btn-outline-primary btn-sm" @onclick="() => NewCue(mCuelist.Cues.FindIndex(c => c.Id == cue.Id) + 1)" disabled="@EditingDisabled">Insert after</button>
+                    <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="() => DuplicateCue(cue)" disabled="@EditingDisabled">Duplicate</button>
+                    <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="() => MoveCue(cue, -1)" disabled="@(EditingDisabled || mCuelist.Cues[0].Id == cue.Id)" aria-label="Move cue up">↑</button>
+                    <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="() => MoveCue(cue, 1)" disabled="@(EditingDisabled || mCuelist.Cues[^1].Id == cue.Id)" aria-label="Move cue down">↓</button>
+                    <button type="button" class="btn btn-outline-danger btn-sm" @onclick="() => DeleteCue(cue)" disabled="@EditingDisabled">Delete</button>
+                </div>
+            </CellTemplate>
+        </MGridComplexColumn>
+    </MGrid>
+
+    @if (mEditingCue != null && !mStatus.IsActive)
+    {
+        <CueEditor Model="mEditingCue" @key="mEditingCue" OnSave="SaveCue" OnCancel="CancelEdit" />
+    }
+}
+
+@code {
+    [Parameter]
+    public Guid CuelistId { get; set; }
+
+    private readonly CancellationTokenSource mDisposeToken = new();
+    private Task? mRefreshTask;
+    private Guid? mLoadedId;
+    private Cuelist? mCuelist;
+    private MForm<Cuelist>? mSettingsForm;
+    private CuelistPlaybackStatus mStatus = new();
+    private Cue? mEditingCue;
+    private int mInsertIndex;
+    private string? mError;
+    private bool EditingDisabled => mStatus.IsActive || mEditingCue != null;
+
+    protected override void OnParametersSet()
+    {
+        if (mLoadedId == CuelistId)
+            return;
+
+        mLoadedId = CuelistId;
+        mCuelist = CuelistService.GetCuelist(CuelistId);
+        mEditingCue = null;
+        mError = null;
+        RefreshStatus();
+    }
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender)
+            mRefreshTask = RefreshStatusAsync();
+    }
+
+    private async Task RefreshStatusAsync()
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromMilliseconds(250));
+
+        try
+        {
+            while (await timer.WaitForNextTickAsync(mDisposeToken.Token))
+            {
+                await InvokeAsync(() =>
+                {
+                    if (mDisposeToken.IsCancellationRequested)
+                        return;
+
+                    var status = CuelistService.GetStatus(CuelistId);
+                    if (status != mStatus)
+                    {
+                        mStatus = status;
+                        StateHasChanged();
+                    }
+                });
+            }
+        }
+        catch (OperationCanceledException) when (mDisposeToken.IsCancellationRequested)
+        {
+        }
+    }
+
+    private void RefreshStatus() => mStatus = CuelistService.GetStatus(CuelistId);
+
+    private bool Commit(Cuelist pCuelist)
+    {
+        try
+        {
+            CuelistService.SaveCuelist(pCuelist);
+            mCuelist = pCuelist;
+            mError = null;
+            return true;
+        }
+        catch (Exception ex) when (ex is ValidationException or InvalidOperationException)
+        {
+            mError = ex.Message;
+            RefreshStatus();
+            return false;
+        }
+    }
+
+    private void SaveSettings()
+    {
+        if (mCuelist != null)
+            Commit(mCuelist);
+    }
+
+    private async Task SubmitSettings()
+    {
+        if (mSettingsForm != null)
+            await mSettingsForm.CallLocalSubmit(true);
+    }
+
+    private async Task Go()
+    {
+        mError = null;
+        if (!mStatus.IsActive && mSettingsForm != null
+            && (!await mSettingsForm.CallLocalSubmit(true) || mError != null))
+            return;
+
+        try
+        {
+            CuelistService.Go(CuelistId);
+            RefreshStatus();
+        }
+        catch (InvalidOperationException ex)
+        {
+            mError = ex.Message;
+        }
+    }
+
+    private void Back()
+    {
+        CuelistService.Back(CuelistId);
+        RefreshStatus();
+    }
+
+    private void TogglePause()
+    {
+        if (mStatus.State == CuelistPlaybackState.Paused)
+            CuelistService.Resume(CuelistId);
+        else
+            CuelistService.Pause(CuelistId);
+
+        RefreshStatus();
+    }
+
+    private void Stop()
+    {
+        CuelistService.Stop(CuelistId);
+        RefreshStatus();
+    }
+
+    private void NewCue(int pIndex)
+    {
+        mInsertIndex = pIndex;
+        mEditingCue = new Cue { Name = "Cue " + (mCuelist!.Cues.Count + 1) };
+        mError = null;
+    }
+
+    private void EditCue(Cue pCue)
+    {
+        mEditingCue = pCue.Clone();
+        mError = null;
+    }
+
+    private void CancelEdit() => mEditingCue = null;
+
+    private void SaveCue(Cue pCue)
+    {
+        var updated = mCuelist!.Clone();
+        int index = updated.Cues.FindIndex(c => c.Id == pCue.Id);
+        if (index >= 0)
+            updated.Cues[index] = pCue;
+        else
+            updated.Cues.Insert(Math.Clamp(mInsertIndex, 0, updated.Cues.Count), pCue);
+
+        if (Commit(updated))
+            mEditingCue = null;
+    }
+
+    private void DuplicateCue(Cue pCue)
+    {
+        var updated = mCuelist!.Clone();
+        var copy = pCue.Clone();
+        copy.Id = Guid.NewGuid();
+        copy.Name += " copy";
+        updated.Cues.Insert(updated.Cues.FindIndex(c => c.Id == pCue.Id) + 1, copy);
+        Commit(updated);
+    }
+
+    private void MoveCue(Cue pCue, int pDirection)
+    {
+        var updated = mCuelist!.Clone();
+        int index = updated.Cues.FindIndex(c => c.Id == pCue.Id);
+        int destination = index + pDirection;
+        if (index < 0 || destination < 0 || destination >= updated.Cues.Count)
+            return;
+
+        (updated.Cues[index], updated.Cues[destination]) = (updated.Cues[destination], updated.Cues[index]);
+        Commit(updated);
+    }
+
+    private void DeleteCue(Cue pCue)
+    {
+        var updated = mCuelist!.Clone();
+        updated.Cues.RemoveAll(c => c.Id == pCue.Id);
+        Commit(updated);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        await mDisposeToken.CancelAsync();
+        if (mRefreshTask != null)
+            await mRefreshTask;
+
+        mDisposeToken.Dispose();
+    }
+}

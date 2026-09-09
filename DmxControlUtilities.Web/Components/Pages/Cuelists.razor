@@ -1,0 +1,131 @@
+@page "/cuelists"
+@page "/cuelists/{Id:guid}"
+
+@using DmxControlUtilities.Lib.Models
+@using DmxControlUtilities.Lib.Services
+@using DmxControlUtilities.Web.Components.Cuelists
+@using MComponents.MGrid
+
+@inject CuelistService CuelistService
+@inject NavigationManager NavigationManager
+
+<PageTitle>Cuelists</PageTitle>
+
+@if (Id is Guid id)
+{
+    <div class="d-flex gap-2 mb-3">
+        <a class="btn btn-secondary" href="cuelists">Back to cuelists</a>
+        <button type="button" class="btn btn-outline-danger" @onclick="StopAll">Stop all cuelists</button>
+    </div>
+    <CuelistEditor CuelistId="id" @key="id" />
+}
+else
+{
+    <h3>Cuelists</h3>
+    <p class="small text-muted">Stored in memory, like devices and shows. Restarting the application clears these cuelists.</p>
+
+    @if (mError != null)
+    {
+        <div class="alert alert-danger" role="alert">@mError</div>
+    }
+
+    <div class="d-flex flex-wrap gap-2 mb-3">
+        <button type="button" class="btn btn-primary" @onclick="AddCuelist">Add cuelist</button>
+        <button type="button" class="btn btn-outline-secondary" @onclick="Refresh">Refresh lists and status</button>
+        <button type="button" class="btn btn-outline-danger" @onclick="StopAll">Stop all cuelists</button>
+    </div>
+
+    <MGrid T="Cuelist" DataSource="mCuelists" EnableAdding="false" EnableEditing="false" EnableDeleting="false"
+           EnableFilterRow="false" EnableGrouping="false" EnableExport="false" EnableImport="false" EnableSaveState="false">
+        <MGridColumn Property="@nameof(Cuelist.Name)" HeaderText="Name" PropertyType="typeof(string)" />
+        <MGridColumn Property="@nameof(Cuelist.Loop)" HeaderText="Loop" PropertyType="typeof(bool)" />
+        <MGridComplexColumn T="Cuelist" Identifier="CueCount" HeaderText="Cues">
+            <CellTemplate Context="cuelist">@cuelist.Cues.Count</CellTemplate>
+        </MGridComplexColumn>
+        <MGridComplexColumn T="Cuelist" Identifier="Playback" HeaderText="Playback">
+            <CellTemplate Context="cuelist">
+                @{
+                    var status = CuelistService.GetStatus(cuelist.Id);
+                }
+                <span>@status.State</span>
+                @if (status.IsActive)
+                {
+                    <span> — @status.CurrentCueName</span>
+                }
+            </CellTemplate>
+        </MGridComplexColumn>
+        <MGridComplexColumn T="Cuelist" Identifier="Actions" HeaderText="Actions">
+            <CellTemplate Context="cuelist">
+                <div class="d-flex flex-wrap gap-1">
+                    <a class="btn btn-primary btn-sm" href="@($"cuelists/{cuelist.Id}")">Open</a>
+                    <button type="button" class="btn btn-success btn-sm" @onclick="() => Go(cuelist)" disabled="@(cuelist.Cues.Count == 0)">Go</button>
+                    <button type="button" class="btn btn-outline-danger btn-sm" @onclick="() => Stop(cuelist)">Stop</button>
+                    <button type="button" class="btn btn-danger btn-sm" @onclick="() => DeleteCuelist(cuelist)">Delete</button>
+                </div>
+            </CellTemplate>
+        </MGridComplexColumn>
+    </MGrid>
+}
+
+@code {
+    [Parameter]
+    public Guid? Id { get; set; }
+
+    private List<Cuelist> mCuelists = new();
+    private string? mError;
+
+    public override Task SetParametersAsync(ParameterView parameters)
+    {
+        Id = null;
+        return base.SetParametersAsync(parameters);
+    }
+
+    protected override void OnParametersSet()
+    {
+        mError = null;
+        if (!Id.HasValue)
+            Refresh();
+    }
+
+    private void Refresh() => mCuelists = CuelistService.Cuelists.ToList();
+
+    private void AddCuelist()
+    {
+        var cuelist = new Cuelist { Name = "Cuelist " + (CuelistService.Cuelists.Count + 1) };
+        CuelistService.AddCuelist(cuelist);
+        NavigationManager.NavigateTo("cuelists/" + cuelist.Id);
+    }
+
+    private void Go(Cuelist pCuelist)
+    {
+        try
+        {
+            CuelistService.Go(pCuelist.Id);
+            mError = null;
+        }
+        catch (InvalidOperationException ex)
+        {
+            mError = ex.Message;
+        }
+
+        Refresh();
+    }
+
+    private void Stop(Cuelist pCuelist)
+    {
+        CuelistService.Stop(pCuelist.Id);
+        Refresh();
+    }
+
+    private void StopAll()
+    {
+        CuelistService.StopAll();
+        Refresh();
+    }
+
+    private void DeleteCuelist(Cuelist pCuelist)
+    {
+        CuelistService.RemoveCuelist(pCuelist.Id);
+        Refresh();
+    }
+}

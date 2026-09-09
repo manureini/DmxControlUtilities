@@ -5,6 +5,8 @@ namespace DmxControlUtilities.Lib.Models
 {
     public class Device
     {
+        private readonly object mValueLock = new();
+
         public Guid Id { get; set; } = Guid.NewGuid();
 
         [Display(Name = "Name")]
@@ -30,12 +32,26 @@ namespace DmxControlUtilities.Lib.Models
 
         public byte GetValue(string pKey)
         {
-            return Values.TryGetValue(pKey, out byte value) ? value : (byte)0;
+            lock (mValueLock)
+            {
+                return Values.TryGetValue(pKey, out byte value) ? value : (byte)0;
+            }
         }
 
         public void SetValue(string pKey, byte pValue)
         {
-            Values[pKey] = pValue;
+            lock (mValueLock)
+            {
+                Values[pKey] = pValue;
+            }
+        }
+
+        public Dictionary<string, byte> GetValuesSnapshot()
+        {
+            lock (mValueLock)
+            {
+                return new Dictionary<string, byte>(Values);
+            }
         }
     }
 }

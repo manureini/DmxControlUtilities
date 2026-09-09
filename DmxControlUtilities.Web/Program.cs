@@ -35,8 +35,10 @@ namespace DmxControlUtilities.Web
             builder.Services.AddSingleton<DmxControlUtilities.Lib.Services.DeviceService>();
             builder.Services.AddSingleton<DmxControlUtilities.Lib.Services.LightTrackService>();
             builder.Services.AddSingleton<DmxControlUtilities.Lib.Services.TimecodeShowService>();
+            builder.Services.AddSingleton<DmxControlUtilities.Lib.Services.CuelistService>();
 
             builder.Services.AddHostedService<DiscoverBackgroundService>();
+            builder.Services.AddHostedService<CuelistPlaybackBackgroundService>();
 
             builder.Services.AddBlazoredModal();
 

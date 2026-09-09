@@ -12,6 +12,7 @@ namespace DmxControlUtilities.Lib.Services
         private readonly DeviceDescriptionService mDescriptionService;
         private readonly List<Device> mDevices = new();
         private readonly object mLock = new();
+        private Dictionary<Guid, Dictionary<string, byte>> mPlaybackValues = new();
 
         public DeviceService(DmxFtdiService pDmxService, DeviceDescriptionService pDescriptionService)
         {
@@ -62,7 +63,7 @@ namespace DmxControlUtilities.Lib.Services
 
             foreach (var function in pDescription.Functions)
             {
-                device.Values[function.Key] = function.DefaultValue;
+                device.SetValue(function.Key, function.DefaultValue);
             }
 
             return device;
@@ -86,10 +87,21 @@ namespace DmxControlUtilities.Lib.Services
         /// </summary>
         public void ApplyDevice(Device pDevice)
         {
+            lock (mLock)
+            {
+                ApplyDeviceCore(pDevice);
+            }
+        }
+
+        private void ApplyDeviceCore(Device pDevice)
+        {
             var description = GetDescription(pDevice);
 
             if (description == null)
                 return;
+
+            var controlValues = pDevice.GetValuesSnapshot();
+            mPlaybackValues.TryGetValue(pDevice.Id, out var playbackValues);
 
             foreach (var function in description.Functions)
             {
@@ -98,15 +110,36 @@ namespace DmxControlUtilities.Lib.Services
                 if (channel < 1 || channel > 512)
                     continue;
 
-                mDmxService.SetChannel(channel, pDevice.GetValue(function.Key));
+                byte value = playbackValues != null && playbackValues.TryGetValue(function.Key, out var playbackValue)
+                    ? playbackValue
+                    : controlValues.GetValueOrDefault(function.Key);
+
+                mDmxService.SetChannel(channel, value);
+            }
+        }
+
+        internal void SetPlaybackValues(IReadOnlyDictionary<Guid, Dictionary<string, byte>> pValues)
+        {
+            lock (mLock)
+            {
+                var affectedDevices = mPlaybackValues.Keys.Union(pValues.Keys).ToHashSet();
+                mPlaybackValues = pValues.ToDictionary(d => d.Key, d => new Dictionary<string, byte>(d.Value));
+
+                foreach (var device in mDevices.Where(d => affectedDevices.Contains(d.Id)))
+                {
+                    ApplyDeviceCore(device);
+                }
             }
         }
 
         public void ApplyAll()
         {
-            foreach (var device in Devices)
+            lock (mLock)
             {
-                ApplyDevice(device);
+                foreach (var device in mDevices)
+                {
+                    ApplyDeviceCore(device);
+                }
             }
         }
     }
